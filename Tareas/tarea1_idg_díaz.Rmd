@@ -9,7 +9,7 @@ output: html_document
 
 Todo lo que esta fuera de Chunk es texto. **Relatar** el codigo hecho
 
-# Procesamiento de Librerías Necesarias 
+# Procesamiento de Librerías Necesarias
 
 ```{r libreria, message=FALSE, warning=FALSE}
 library(tidyverse)
@@ -23,7 +23,7 @@ ruta_rds = "../DATA/casen_rm.rds"
 casen_rm = readRDS(ruta_rds)
 ```
 
-# Análisis exploratorio 
+# Análisis exploratorio
 
 Veamos un análisis
 
