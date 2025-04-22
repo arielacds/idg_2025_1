@@ -1,43 +1,413 @@
 ---
-title: "Análisis Ingreso CASEN"
+title: "Tarea 1: Regresión para Estimar Ingreso"
 author: "Ariela Díaz"
 date: "`r Sys.Date()`"
 output: html_document
 ---
 
-# Introducción
-
-Todo lo que esta fuera de Chunk es texto. **Relatar** el codigo hecho
-
-# Procesamiento de Librerías Necesarias
-
-```{r libreria, message=FALSE, warning=FALSE}
-library(tidyverse)
-
+```{=html}
+<style>
+h1.title {
+  text-align: center;
+}
+</style>
 ```
 
-Luego, cargamos dataset de la CASEN en la RM.
+# 1. Introducción
+
+La Encuesta de Caracterización Socioeconómica Nacional (CASEN) es una herramienta fundamental para el análisis de las condiciones de vida de la población en Chile, gracias a su amplia cobertura temática y territorial, lo que permite estudiar variables claves como educación, salud, vivienda, empleo e ingresos.
+
+Según la División Observatorio Social, en la Encuesta CASEN el concepto de ingreso corresponde al ingreso corriente disponible del hogar, también denominado ingreso total. Este se compone de la suma del ingreso primario o autónomo y las transferencias corrientes percibidas por el hogar, e incluye además el valor de los servicios imputados al uso de la vivienda.
+
+En este estudio, se utiliza el **ingreso per cápita**, que corresponde al ingreso total del hogar dividido por el número de integrantes del mismo. Esta medida permite comparar de manera más justa el bienestar económico entre personas de hogares de distinto tamaño, ofreciendo una aproximación más precisa a las desigualdades socioeconómicas individuales.
+
+En este contexto, el presente trabajo tiene como propósito aplicar técnicas de análisis de datos y modelos de regresión lineal para identificar y cuantificar los principales determinantes del ingreso per cápita de las personas residentes en la Región Metropolitana, a partir de la base de datos CASEN 2022.
+
+**Pregunta de investigación**
+
+¿Existen diferencias significativas en el ingreso per cápita de las personas en función de su nivel educacional, edad, sexo y tamaño del hogar en la Región Metropolitana?
+
+## 1.1. Objetivos
+
+### 1.1.1. Objetivo Principal
+
+En función a lo anterior, el presente informe tiene como objetivo principal analizar los factores sociodemográficos que inciden en el ingreso per cápita de las personas residentes en la Región Metropolitana utilizando técnicas de regresión lineal a partir de la Encuesta CASEN 2022.
+
+### 1.1.2. Objetivos Secundarios
+
+Los objetivos específicos por trabajar son:
+
+-   Seleccionar y preprarar una base de datos que contengan las variables relevantes para el estudio del ingreso.
+
+-   Realizar un proceso de limpieza de datos, eliminando observaciones con valores atípicos. y vacíos.
+
+-   Efectuar un análisis exploratorio para comprender la distribución y comportamiento de las variables seleccionadas.
+
+-   Evaluar correlación entre el ingreso per cápita y las variables.
+
+-   Estimar un modelo de regresión lineal que permita cuantificar el efecto de dichas variables sobre el ingreso.
+
+-   Interpretar los resultados obtenidos del modelo, destacando variables significativas.
+
+    ------------------------------------------------------------------------
+
+# 2. Metodología
+
+El desarrollo de este estudio se llevó a cabo a partir de la base de datos de la Encuesta CASEN 2022, restringida en la Región Metropolitana (RM). Para hacer un análisis se siguieron una serie de pasos, los cuales permiten preparar, explorar y modelar los datos:
+
+## 2.1. Librerías necesarias
+
+Para realizar el análisis estadístico y gráficos, se utilizaron diversas librerías del lenguaje R.
+
+Estas permiten cargar la base de datos, transformarla, visualizarla y construir modelos. Las principales librerías utilizadas son:
+
+```{r librerias, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(haven)
+library(ggplot2)
+library(corrplot)
+library(ggcorrplot)
+library(scales)
+```
+
+Cada paquete tiene una función diferente.
+
+| Librería                         | Función                                 |
+|--------------------------------|----------------------------------------|
+| `tidyverse`                      | Manipulación y visualización de datos.  |
+| `haven`                          | Lectura de archivos `.rds` de CASEN.    |
+| `ggplot` `corrplot` `ggcorrplot` | Visualización de datos y correlaciones. |
+| `scales`                         | Mejora el formato de ejes numéricos.    |
+
+## 2.2. Carga de Datos
+
+Se utilizó una versión filtrada previamente de la base CASEN 2022 correspondiente a la región de estudio (RM). Esta fue cargada en formato `.rds`, que es un formato propio de R para conservar la estructura de los datos.
 
 ```{r}
-ruta_rds = "../DATA/casen_rm.rds"
+ruta_rds = "../data/casen_rm.rds"
 casen_rm = readRDS(ruta_rds)
 ```
 
-# Análisis exploratorio
+## 2.3. Selección y transformación de variables
 
-Veamos un análisis
+En esta etapa se seleccionaron las siguientes variables:
 
-```{r}
-summary(casen_rm$ypc)
+| Variable | Información                                      |
+|----------|--------------------------------------------------|
+| `ypc`    | Ingreso per cápita                               |
+| `e6a`    | Nivel educacional más alto que asiste o asistió. |
+| `edad`   | Edad de la persona entrevistada                  |
+| `sexo`   | Sexo de la persona entrevistada                  |
+| `o25`    | Tamaño de la empresa                             |
+
+```{r seleccion, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+# Seleccionamos yTransformamos las variables de interés
+casen = casen_rm %>% 
+  transmute(
+    ingreso = as.numeric(zap_labels(ypc)), # ingreso per capita
+    educ = as.numeric(zap_labels(e6a)),  # nivel educativo mas alto al que asiste o asisitio 
+    edad = as.numeric(zap_labels(edad)),  # edad de la persona
+    tam_empresa = as.numeric(zap_labels(o25)), # tamaño empresa
+    sexo = as.factor(zap_labels(sexo)))  # sexo (factor)
+
 ```
 
-El promedio de ingreso para este dataset es de `r mean(casen_rm$ypc, na.rm = TRUE)` .
+Además, se hizo la transformacion de la variable categóricas `sexo` en factor, lo que es necesario para el análisis estadístico y modelos. Y se establecen restricciones como:
 
-Para visualizar mejor
+-   El ingreso debe ser mayor a 0.\
+    $ingreso > 0$
 
-```{r echo=FALSE}
-hist(casen_rm$ypc, 
-     xlab = "Ingreso per Cápita", 
-     col = "lightblue")
+-   La edad de la persona entrevistada debe ser mayor a 15 años y menor a 65 años.\
+    $edad ≥ 15$ & $edad ≤ 65$
 
+-   Se trabaja con el 80% de los datos.
+
+```{r categorica a factor, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+# Filtro de valores faltantes NA y atipicos 
+casen = casen %>% 
+  # eliminar registros con NA en cualquier variable
+  filter(
+    !is.na(ingreso) & ingreso > 0, # elimina ingresos nulos o negativos 
+    !is.na(educ),
+    !is.na(edad),
+    !is.na(sexo),
+    !is.na(tam_empresa), 
+   edad >= 15, # edad minima laboral
+   edad <= 65  # limite superior (jpreubilacion)
+  ) %>%
+  filter(ingreso < quantile(ingreso, 0.80))  # eliminamos los valores extremos 
 ```
+
+------------------------------------------------------------------------
+
+# 3. Resultados
+
+## 3.1. Análisis exploratorio
+
+Una vez que los datos fueron limpiados, se procedió a una exploración inicial de las variables seleccionadas, con el fin de conocer y entender su comportamiento y distribución. A continuación, se presenta un resumen estadístico y visualizaciones relevantes.
+
+### 3.1.1. Estadística Descriptiva
+
+Se trabaja con la función `summary()`, ya que se utiliza para analizar variables numéricas, proporcionando medidas como la mediana, el valor mínimo y máximo, la media, entre otras. Este método permite obtener una visión general de la distribución y características de los datos considerados.
+
+```{r summary casen, echo=FALSE, message=FALSE, warning=FALSE}
+summary(casen)
+```
+
+El análisis estadístico de las variables revela tendencias clave en los datos. El **ingreso per cápita** muestra una distribución asimétrica con una media de **\$456.274** y una mediana inferior, lo que indica la influencia de valores altos en el promedio. En cuanto al **nivel educativo**, la mayoría de la muestra ha completado la educación básica, con una media de 10,43 años y una mediana de 11, mientras que el máximo registrado corresponde a estudios superiores (15 años). La **edad** de la muestra oscila entre 15 y 65 años, con una distribución simétrica en torno a la media de 41 años y una mediana de 40, lo que sugiere que la mayoría está en plena edad laboral.
+
+Respecto al **tamaño de empresa**, la media negativa (-1,557) indica posibles inconsistencias en los datos, aunque la mayoría de los trabajadores pertenece a empresas pequeñas o medianas, con percentiles entre 1 y 5. Finalmente, el análisis del **sexo** revela una distribución equilibrada, con una ligera mayoría masculina (7.300 hombres frente a 6.446 mujeres).
+
+Este resumen permite visualizar patrones en las variables clave, facilitando una interpretación clara de las características de la muestra.
+
+### 3.1.2. Análisis Exploratorio con Gráficos
+
+Para hacernos una idea de como se distribuyen las variables, generamos histogramas y boxplots.
+
+```{r histograma ingreso, echo=FALSE, message=FALSE, warning=FALSE}
+# Histograma de ingreso
+ggplot(casen, aes(x = ingreso)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "black") +
+  labs(title = "Distribución del Ingreso", x = "Ingreso per cápita", y = "Frecuencia")
+```
+
+El histograma muestra cómo se distribuye el **ingreso per cápita** en la población analizada. La mayoría se concentra en torno a **250,000**, con menos personas en los niveles más altos de ingreso. La distribución está **sesgada hacia la derecha**, lo que indica que hay un pequeño grupo con ingresos significativamente mayores. Este patrón es común en datos económicos y refleja las diferencias en la distribución de riqueza.
+
+```{r histograma edad, echo=FALSE, message=FALSE, warning=FALSE}
+# Histograma de edad
+ggplot(casen, aes(x = edad)) +
+  geom_histogram(bins = 40, fill = "darkseagreen", color = "black") +
+  labs(title = "Distribución de Edad", x = "Edad", y = "Frecuencia")
+```
+
+El histograma refleja la distribución de **edad** en la población analizada, con una mayor concentración en torno a los **30 años** y otros picos en edades como **35, 40, 50 y 55 años**. Aunque la distribución presenta algunas variaciones, se observa una diversidad etaria significativa. Este análisis permite comprender la estructura demográfica del grupo y su posible impacto en distintas áreas, como el empleo y el consumo. Si necesitas más detalles sobre tendencias o medidas estadísticas, dime y lo revisamos juntos.
+
+A continuación, se realizan boxplots para ver la relación entre el ingreso y variables como el sexo y la educación.
+
+```{r boxplot ingreso y nivel educacional, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(casen, aes(x = as.factor(educ), y = ingreso)) +
+  geom_boxplot(fill = "orange") +
+  labs(
+    title = "Ingreso según Nivel Educacional",
+    x = "Nivel Educativo",
+    y = "Ingreso"
+  ) +
+  scale_y_continuous(labels = function(x) format(x, big.mark = ".", scientific = FALSE)) +
+  theme_minimal()
+```
+
+```{r boxplot ingreso por sexo, echo=FALSE, message=FALSE, warning=FALSE}
+# Boxplot de ingreso según sexo 
+ggplot(casen, aes(x = as.factor(sexo), y = ingreso, fill = as.factor(sexo))) + 
+  geom_boxplot() + 
+  labs(
+    title = "Distribución del Ingreso por Sexo",
+    x = "Sexo",
+    y = "Ingreso",
+    fill = "Sexo"
+  ) + 
+  scale_x_discrete(labels = c("1" = "Hombre", "2" = "Mujer")) +
+  scale_fill_manual(
+    values = c("1" = "#F8766D", "2" = "#00BFC4"),
+    labels = c("1" = "Hombre", "2" = "Mujer")
+  ) +
+  scale_y_continuous(labels = function(x) format(x, big.mark = ".", scientific = FALSE)) +
+  theme_minimal()
+```
+
+Se observa a nivel educacional, el ingreso tiende a incrementarse. Esta relación es bastante clara y sugiere que la educación es un factor clave en la generación de ingresos. En cuanto al sexo, existe una diferencia observable en la mediana de ingreso entre hombres y mujeres, lo que podría indicar brechas salariales de género.
+
+## 3.2. Matriz de Correlación
+
+Luego del análisis visual, se calcula la matriz de correlación entre las variables numéricas seleccionadas para el estudio. Con la finalidad de identificar la intensidad y dirección de la relación lineal entre el ingreso y las variables predictoras, esto nos permite tener una visión preliminar de qué factores podrían tener mayor relevancia al momento de construir el modelo de regresión posteriormente.
+
+Para el análisis fue necesaria la transformación de la variable sexo, originalmente categórica, a formato numérico para su inclusión en el cálculo. A continuación se muestra la transformación.
+
+```{r SEXO NUMERICO, echo=TRUE, message=FALSE, warning=FALSE}
+# Convertimos variables categóricas a numéricas para correlación
+casen_cor = casen %>%
+  mutate(
+    sexo = as.numeric(sexo)
+  )
+```
+
+La correlación toma valores entre -1 y 1, donde valores cercanos indican una fuerte relación positiva, valores cercanos a -1 indican una fuerte relación negativa, y valores cercanos a 0 indican ausencia de relacion lineal.
+
+```{r matriz de correlacion, echo=FALSE, message=FALSE, warning=FALSE}
+# Calculamos la matriz de correlación
+cor_matriz = cor(select(casen_cor, ingreso, educ, edad, sexo, tam_empresa))
+
+# Visualizacion gráfica de la matriz de correlación
+ggcorrplot(
+  cor_matriz,
+  method = "circle",
+  type = "full",
+  lab = TRUE,
+  lab_size = 3,
+  colors = c("red", "white", "blue"),
+  title = "Matriz de Correlación entre Variables",
+  ggtheme = theme_minimal()
+)
+```
+
+```{r correlacion ordenada, echo=FALSE, message=FALSE, warning=FALSE, paged.print=TRUE}
+# Tabla de correlaciones ordenadas 
+
+# Extraer correlaciones con la variable ingreso 
+cor_y = cor_matriz["ingreso", ]
+cor_df = data.frame(variable = names(cor_y), correlacion = cor_y) %>%
+  filter(variable != "ingreso") %>%
+  mutate(abs_cor = abs(correlacion)) %>%
+  arrange(desc(abs_cor))
+
+# Imprimir tabla 
+print(cor_df)
+
+# Visualización de las correlaciones ordenadas con ingreso
+ggplot(cor_df, aes(x = reorder(variable, abs_cor), y = correlacion)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  geom_text(aes(label = round(correlacion, 2)), hjust = ifelse(cor_df$correlacion > 0, -0.2, 1.2)) +
+  labs(
+    title = "Correlación con el Ingreso per cápita (ypch)",
+    x = "Variable",
+    y = "Correlación"
+  ) +
+  theme_minimal()
+```
+
+A través de esta matriz es posible observar:
+
+-   Las correlaciones más destacadas son:
+
+    -   **Ingreso y educación** tienen una correlación positiva de **0.31**, lo que sugiere que un mayor nivel educativo tiende a estar asociado con mayores ingresos.
+
+    -    **Edad y educación** presentan una correlación negativa de **-0.29**, indicando que en esta muestra, las personas mayores suelen tener menos años de educación formal.
+
+-   Las demás correlaciones son cercanas a cero, lo que sugiere que no hay relaciones fuertes entre las otras variables analizadas.
+
+## 3.3. Modelo de Regresión Lineal
+
+A partir del análisis exploratorio y la matriz de correlación, se ajustó un modelo de regresión lineal múltiple para explicar el **ingreso per cápita** en función de variables sociodemográficas. Se estimaron dos modelos: uno lineal y otro log-log, donde el segundo transforma el ingreso mediante logaritmo, permitiendo interpretar los coeficientes como variaciones porcentuales y mitigando la asimetría en la distribución. Estos modelos buscan identificar los factores clave que influyen en el ingreso en la Región Metropolitana.
+
+```{r factor sexo, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+# Convertimos variables categóricas a factor (revisión) 
+casen = casen %>%
+  mutate(
+    sexo = as.factor(sexo)
+  )
+```
+
+El modelo lineal multiple planteado tiene la siguiente forma:
+
+$Ingreso = 𝛽_0 + 𝛽_1 * Tamaño Empresa + 𝛽_2 * Educación + 𝛽_3 * Edad + 𝛽_4 * Sexo_i+ 𝜀_i$
+
+```{r modelo de regresion, message=FALSE, warning=FALSE, include=FALSE}
+modelo = lm(ingreso ~ tam_empresa +educ + edad + sexo , data = casen)
+```
+
+Donde:
+
+-   $𝛽_0$ : es el intercepto del modelo.
+
+-   $𝛽_1,𝛽_2,𝛽_3,𝛽_4$ : son los coeficientes estimados para cada variable.
+
+-   $𝜀_i$ : error.
+
+Se utiliza nuevamente `summary()`para visualizar los resultados.
+
+```{r summary modelo, echo=TRUE, message=FALSE, warning=FALSE}
+summary(modelo)
+```
+
+A partir de lo entregado anteriormente, se puede mencionar que el resumen del modelo entrega información clave sobre los coeficientes estimados, su significancia estadística y el grado de ajuste global:
+
+-   Intercepto ($𝛽_0$): Tiene un valor de **-27,100**, este es un valor estimado del ingreso cuando todas las variables explicativas seleccionadas son 0 (esto no tiene una interpretacion práctica directa, pero es necesario para ajustar la recta de regresión).
+
+-   Tamaño Empresa ($𝛽_1$): Por cada unidad adicional en el tamaño de la empresa (más grande), el ingreso mensual estimado aumenta en **\$434**, manteniendo las demás variables constantes. Esto sugiere una relación positiva entre el tamaño del empleador y los ingresos percibidos.
+
+-   Educación ($𝛽_2$): Por cada nivel adicional de educación alcanzado, el ingreso aumente en promedio **\$36.378**, lo cual muestra un efecto fuerte y altamente siginifcativo de la educación en el nivel de ingresos.
+
+-   Edad ($𝛽_3$): Cada año adicional de edad se asocia con un incremento promedio de **\$2.711** en el ingreso, lo que podría reflejar la experiencia laboral acumulada.
+
+-   Sexo~2~ ($𝛽_4$): Al ser mujer (sexo codificado como 2), se asocia con una disminución promedio de **\$13.786** en el ingreso respecto a los hombres, manteniendo constantes las demás variables. Este coefeciente refleja una brecha de género en ingresos significativa y negativa hacia las mujeres.
+
+El coeficiente de determinación **R² = 0.124** indica que el modelo explica aproximadamente el 12.4% de la variabilidad en el ingreso. Aunque este valor es relativamente bajo, es común en estudios sociales donde intervienen múltiples factores no observados, sugiriendo que existen otras variables que influyen en los ingresos además de las consideradas en el modelo.
+
+Por otro lado, la **F-statistic = 486.1**, con un **p-valor \< 2.2e-16**, confirma que el modelo es estadísticamente significativo, lo que implica que al menos una de las variables explicativas tiene un impacto real en el ingreso.
+
+### 3.3.1. Diagnóstico
+
+Ya ajustado el modelo, es importante hacer un análisis de diagnóstico para evaluar si se cumplen los supuestos de la regresión lineal como:
+
+-   Linealidad; La relación entre las variables independientes y la dependiente debe ser lineal.
+
+-   Independencia de los errores: Los residuos (errores del modelo) deben ser independientes entre sí.
+
+-   Homocedasticidad: Los residuos deben tener varianza constante (no mostrar patrones)
+
+-   Normalidad de los residuos: Los errores deben distribuirse normalmente.
+
+Para revisar el cumplimiento de estos supuestos, se utilizan gráficos de diagnóstico generados por la función `plot()`.
+
+```{r analisis modelo, echo=FALSE}
+par(mfrow = c(2, 2))  # Disposición 2x2 para ver los cuatro gráficos juntos
+plot(modelo)
+```
+
+Se puede observar que los **residuos vs valores** tiene una dispersión aleatoria, lo que indica que el supuesto de linealidad parece cumplirse. El gráfico **Q-Q** revela que los residuos se aproximan a una distribución normal, aunque podrían existir ligeras desviaciones en los extremos. En el **gráfico de Scale-Location** sugiere que la varianza de los residuos es relativamente constante, lo que es favorable para el modelo. Y finalmnete en el **gráfico de Residuos vs Leverage** nos permite identificar posibles puntos influyentes que podrían afectar los coeficientes de la regresión.
+
+## 3.4. Modelo logarítmico
+
+El modelo estima `log(ingreso)` en función de `tam_empresa`, `educ`, `edad` y `sexo`.
+
+$log(ingreso) = 𝛽_0 + 𝛽_1 * Tamaño Empresa + 𝛽_2 * Educación + 𝛽_3 * Edad + 𝛽_4 * Sexo_i+ 𝜀_i$
+
+```{r log, include=FALSE}
+casen = casen %>%
+  mutate(log_ingreso = log(ingreso))
+
+modelo_log = lm(log_ingreso ~ tam_empresa + educ+edad + sexo, data = casen)
+```
+
+Aplicamos nuevamente `summary()`, obteniendo
+
+```{r datos log, echo=TRUE}
+summary(modelo_log)
+```
+
+En este modelo, los coeficientes se interpretan como **aproximaciones a cambios porcentuales**. Por ejemplo:
+
+-   Cada año adicional de **educación** se asocia con un **aumento del 8.5%** en el ingreso.
+
+-   Ser mujer se asocia con un **3.07% menos** de ingreso en promedio que los hombres.
+
+-   Este modelo tiene un R² ajustado de **11.5%**, similar al modelo lineal, pero mejora la distribución de los residuos, haciéndolos más simétricos y cercanos a la normalidad, como se observa en el análisis de diagnóstico.
+
+### 3.4.1. Diagnóstico
+
+```{r diag log, echo=FALSE}
+par(mfrow = c(2, 2))  # Disposición 2x2 para ver los cuatro gráficos juntos
+plot(modelo_log)
+par(mfrow = c(1, 1))  # Volver a disposición normal
+```
+
+La dispersión aleatoria en el gráfico de **residuos vs valores ajustados** indica que se cumple el supuesto de linealidad, mientras que la **normalidad de los residuos** es más evidente en el gráfico Q-Q. Además, la estabilidad en la varianza observada en **Scale-Location** sugiere una mejor homocedasticidad, lo que fortalece la fiabilidad del modelo. Por otro lado, el gráfico de **residuos vs leverage** permite detectar posibles puntos influyentes que podrían afectar la estimación de los coeficientes.
+
+------------------------------------------------------------------------
+
+# 4. Conclusión
+
+Este estudio tuvo como objetivo analizar si las diferencias en el ingreso per cápita en la Región Metropolitana están asociadas a factores como el nivel educativo, la edad, el sexo y el tamaño del hogar. A partir del análisis de los datos de la Encuesta CASEN 2022 y mediante la estimación de dos modelos de regresión múltiple (uno lineal y otro logarítmico) se pudo comprobar que dichas variables tienen un impacto significativo sobre el ingreso.
+
+En ambos modelos, el nivel educativo, la edad, el sexo y el tamaño del hogar resultaron ser predictores relevantes. Se evidenció, en particular, el efecto positivo de la educación sobre el ingreso, así como la existencia de una brecha de género desfavorable para las mujeres. No obstante, el bajo R² ajustado (12.4% en el modelo lineal y 11.5% en el logarítmico) sugiere que existen otros factores no considerados en este análisis que también influyen de manera importante en el ingreso per cápita.
+
+A pesar de ello, el modelo logarítmico mostró un mejor desempeño estadístico, especialmente en cuanto a la distribución de los residuos, lo que lo posiciona como una alternativa más adecuada para futuros análisis. Además, permite interpretar los efectos en términos relativos, facilitando la comprensión de las variaciones en los ingresos.
+
+Para futuras investigaciones, se recomienda explorar modelos más complejos o no lineales, así como incorporar nuevas variables que permitan captar de forma más precisa los determinantes del ingreso. Esto contribuirá a una comprensión más profunda de las desigualdades económicas en la región y a fortalecer la capacidad explicativa de futuros estudios.
+
+------------------------------------------------------------------------
+
+# Referencias 
+
+-   División Observatorio Social. (2023). Nota técnica N°2 – julio 2023. Encuesta de Caracterización Socioeconómica Nacional 2022. Ministerio de Desarrollo Social y Familia.
