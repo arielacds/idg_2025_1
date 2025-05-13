@@ -405,7 +405,7 @@ con educación básica frente aquellas con educación superior en el grupo
 etario desde 15 a 49 años.</p></li>
 <li><p>Calcular el procentaje de viviendas con hacinamiento moderado o
 crítico.</p></li>
-<li><p>Respresentar espacialmente ambaos indicadores a nivel de zona
+<li><p>Respresentar espacialmente ambos indicadores a nivel de zona
 censal en la Provincia de Santiago.</p></li>
 <li><p>Identificar patrones conjuntos de vulnerabilidad mediante un
 análisis bivariado, con especial énfasis en zonas de doble
@@ -466,8 +466,8 @@ que contiene las tablas del Censo 2017 para la Región Metropolitana.</p>
 <li><p><code>p08</code>: Sexo.</p></li>
 <li><p><code>p09</code>: Edad.</p></li>
 <li><p><code>p15</code>: Nivel del curso más alto aprobado.</p></li>
-<li><p><code>ind_hacin_rec</code> : Indicador censal de hacinamiento.
-.</p></li>
+<li><p><code>ind_hacin_rec</code> : Indicador censal de
+hacinamiento.</p></li>
 </ul>
 <p>Para las mujeres de edad fértil cuyo nivel de curso más alto aprobado
 haya sido desde sala cuna hasta cuarto medio se realizó el siguiente
@@ -513,26 +513,30 @@ mujeres con educación superior (p15 &gt; 7). Valores mayores a 1 indican
 predominio de mujeres con menor nivel educativo.</td>
 </tr>
 <tr class="even">
-<td></td>
+<td><code>hacinamiento</code></td>
 <td>porcentaje de viviendas en la zona censal que presentan hacinamiento
 moderado o crítico (según <code>ind_hacin_rec</code>).</td>
 </tr>
 </tbody>
 </table>
-<p>También se extrajo la geometría de zonas urbanas para la Provincia de
-Santiago desde la tabla <code>dpa.zonas_censales_rm</code>.</p>
-<p>Luego, se uniron los datos censales con la geometría espacial para
-genera una tabla final lista para la visualización.</p>
-<p>Adicionalmente, en la consulta se vinculan las tablas
-<code>viviendas</code>, <code>hogares</code> y <code>personas</code> del
-Censo, lo cual permite calcular el hacinamiento desde el punto de vista
-de la <strong>vivienda</strong> y no únicamente de las personas. Este
-enfoque refleja mejor las condiciones habitacionales materiales del
-territorio.</p>
-<p>Esta tabla permite vincular las condiciones educativas y
-habitacionales de mujeres en edad fértil con su localización
-territorial, facilitando la generación de visualizaciones temáticas y
-bivariadas que se analizarán en las siguientes secciones.</p>
+<p>También se extrajo la geometría correspondiente a las zonas urbanas
+de la Provincia de Santiago desde la tabla
+<code>dpa.zonas_censales_rm</code>, seleccionando únicamente aquellas
+clasificadas como urbanas.</p>
+<p>Posteriormente, se integraron los datos censales previamente
+procesados con la geometría espacial, generando así una tabla espacial
+final lista para su visualización.</p>
+<p>Cabe destacar que la construcción de los indicadores consideró la
+vinculación de las tablas de viviendas, hogares y personas del Censo
+2017, lo que permitió calcular el hacinamiento desde una perspectiva
+centrada en la vivienda, y no únicamente en las personas. Este enfoque
+resulta más adecuado para representar las condiciones materiales del
+hábitat en el territorio.</p>
+<p>La tabla espacial resultante permite relacionar las condiciones
+educativas y habitacionales de las mujeres en edad fértil con su
+ubicación geográfica, facilitando así la generación de mapas temáticos y
+bivariados, los cuales se presentan y analizan en las secciones
+siguientes.</p>
 </div>
 <div id="indicadores" class="section level3">
 <h3>2.1.3. Indicadores</h3>
@@ -580,8 +584,8 @@ alcanzada.</td>
 hacinamiento (niveles 2 o 4)}}{\text{Total de viviendas}} \right) \times
 100\
 \]</span></p>
-<p>Este indicador refleja condiciones de vulnerabilidad habitacional en
-cada zona censal.</p>
+<p>refleja las condiciones de vulnerabilidad habitacional en cada zona
+censal.</p>
 </div>
 <div id="visualización" class="section level3">
 <h3>2.1.4. Visualización</h3>
@@ -596,7 +600,7 @@ indicadores, permitiendo observar zonas de doble exclusión (alto rezago
 educativo y alto hacinamiento).</p></li>
 <li><p><strong>Mapa bivariado</strong>: combina ambos indicadores en una
 visualización compuesta, facilitando la identificación de zonas con
-simultánea precariedad educativa y habitacional. entregando evidencia
+simultánea precariedad educativa y habitacional, entregando evidencia
 útil para el diseño de políticas con enfoque de género y
 territorial.</p></li>
 </ol>
