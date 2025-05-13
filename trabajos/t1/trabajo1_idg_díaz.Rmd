@@ -1,0 +1,318 @@
+---
+title: "Educación Básica y Hacinamiento en Mujeres de Edad Fértil: Región Metropolitana"
+author: "Ariela Díaz Santander"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# 1. Introducción
+
+Las ciudades no son espacios neutros. Cada calle, barrio o estación de metro responde a decisiones que han sido tomadas "históricamente" desde una mirada hegemónica, masculina y patriarcal. Por eso, muchas veces las mujeres no encuentran en el entorno urbano un reflejo de sus necesidades, trayectorias o rutinas cotidianas.
+
+Durante mucho tiempo, el espacio productivo fue considerado un lugar exclusivo para los hombres, mientras que las mujeres quedaban relegadas al ámbito doméstico y reproductivo. Con su incorporación creciente al trabajo, al estudio y al uso intensivo del transporte público, las mujeres comenzaron a habitar plenamente la ciudad. Sin embargo, esta transformación social no siempre vino acompañada de un rediseño urbano que las incluya de forma justa.
+
+Uno de los ámbitos más potentes para avanzar hacia la equidad es la educación. Afortunadamente, hoy muchas mujeres acceden a la educación superior, pero esto no siempre fue así. A comienzos del siglo XIX, en Chile, solo un 10% de las mujeres sabía leer y apenas un 8% escribir (Departamento de Derechos Intelectuales, s.f.). Aunque los datos han mejorado, aún persisten desigualdades profundas, sobre todo en sectores donde la precariedad social y habitacional limitan las oportunidades.
+
+EN función a lo anerior, el presente trabajo busca visibilizar esas desigualdades desde una mirada territorial. A partir de los datos del **Censo 2017**, se analiza dónde se concentran las mujeres en edad fértil (15–49 años) que tienen solo educación básica, y cómo estas zonas se relacionan con otra condición estructuralmente excluyente: el **hacinamiento habitacional**. Cuando ambas situaciones coinciden, hablamos de una **doble vulnerabilidad** que afecta especialmente a las mujeres más pobres.
+
+Este análisis permite no solo evidenciar la desigualdad, sino también ofrecer herramientas concretas para pensar políticas públicas más justas y con perspectiva de género.
+
+## 1.1. Objetivo General
+
+El objetivo general de este trabajo es analizar la distribución territorial de las mujeres en edad fértil con bajo nivel educativo en la Región Metropolitana, y su relación con las condiciones de hacinamiento en sus zonas de residencia.
+
+## 1.2. Objetivos Específicos
+
+Los objetivos específicos por trabajar son:
+
+-   Estimar un índice educativo que relacione la cantidad de mujeres con educación básica frente aquellas con educación superior en el grupo etario desde 15 a 49 años.
+
+-   Calcular el procentaje de viviendas con hacinamiento moderado o crítico.
+
+-   Respresentar espacialmente ambaos indicadores a nivel de zona censal en la Provincia de Santiago.
+
+-   Identificar patrones conjuntos de vulnerabilidad mediante un análisis bivariado, con especial énfasis en zonas de doble exclusión.
+
+Este trabajo de dividirá en Metodología, Análisis, Conclusión y Bibliografía.
+
+------------------------------------------------------------------------
+
+# 2. Desarrollo
+
+Para el desarrollo metodológico del presente trabajo se utilizaron dos software: pgAdmin y RStudio, con el objeto de procesamiento, análisis y despliegue de resultados basados en el Diccionarion Censal 2017.
+
+Lo primero que se hizo fue descargar la base de datos del censo 2017, enfocado exclusivamente en las zonas urbanas de la Provincia de Santiago, Región Metropolitana. Por lo tanto, la unidad de análisis es la zona censal urbana, que permite observar diferencias a un nivel territorial más fino que la comuna misma. El análisis se realizó mediante herramientas de bases de datos y visualización espacial.
+
+El objetivo metodológico es calcular y represntar los indicadores sociales relevantes desde una perspectiva de género:
+
+1.  **Índice educativo**: razón entre mujeres en edad fértil (15-49 años) con educación básica o menor y aquellas con educación superior.
+
+2.  **Porcentaje de viviendas con hacinamiento**: de a cuerdo con la categorización ofical del censo (moderado o critico).
+
+## 2.1. Metodología
+
+**Librerías necesarias**
+
+Antes de realizar cualquier análisis, se cargan las librerías necesarias para conectarse a la base de datos, manipular geometrías espaciales y generar visualizaciones:
+
+```{r librerias, echo=TRUE, message=FALSE, warning=FALSE}
+library(DBI)
+library(RPostgres)
+library(sf)
+library(ggplot2)
+library(cowplot)
+library(biscale)
+```
+
+**Conexión a la base de datos PostgreSQL**
+
+Para acceder a las tablas del Censo 2017 de la Región Metropolitana, se establece una conexión a una base de datos local PostgresSQL.
+
+```{r conexion, echo=FALSE, message=FALSE, warning=FALSE}
+con <- dbConnect(
+  Postgres(),
+  dbname   = "censo_rm_2017",
+  host     = "localhost",
+  port     = 5432,
+  user     = "postgres",
+  password = "postgres"
+)
+```
+
+Para hacer una consulta SQL hay que considerar que las variables a trabajar son:
+
+-   `p08`: Sexo.
+
+-   `p09`: Edad.
+
+-   `p15`: Nivel del curso más alto aprobado.
+
+-   `ind_hacin_rec` : Indicador censal de hacinamiento (categorías 2 y 4 corresponden a hacinamiento medio y crítico).
+
+Para las mujeres de edad fértil cuyo nivel de curso más alto aprobado haya sido desde sala cuna hasta cuarto medio se realizó el siguiente filtro:
+
+$p.p08 = 2$ $AND$ $p.p09$ $BETWEEN$ $15$ $AND$ $49$ $AND$ $p.p15 <= 7$
+
+Que posteriormente se guardará como variable "Educación Básica".
+
+Para el caso de mujeres en edad fértil que tengan estudios técnicos, profesionales, magíster y/o doctorado se realizó el siguiente filtro:
+
+$p.p08 = 2$ $AND$ $p.p09$ $BETWEEN$ $15$ $AND$ $49$ $AND$ $p.p15 > 7$
+
+Que posteriormente será guardado como “Educación Superior”.
+
+Como resultado obtenemos una tabla con las siguentes tablas:
+
+| Variable | Descripción |
+|------------------------------------|------------------------------------|
+| geocodigo | código único de identificación de la zona censal (clave espacial). |
+| nom_comuna | nombre de la comuna en la que se encuentra la zona. |
+| educ_basica | Cantidad de mujeres en edad fértil con educación de sala cuna hasta educación media. |
+| educ_superior | Cantidad de mujeres en edad fértil con educación superior. |
+
+```{r sql, message=FALSE, warning=FALSE, include=FALSE}
+# 3) CONSULTA SQL: RAZÓN EDUCATIVA Y HACINAMIENTO
+# =============================================================================
+sql_indicadores <- "
+SELECT 
+  z.geocodigo::double precision AS geocodigo,
+  c.nom_comuna,
+
+  -- Razón educativa: mujeres con educación básica / mujeres con educación superior
+  COALESCE(ROUND(
+    COUNT(*) FILTER (
+      WHERE p.p08 = 2 AND p.p09 BETWEEN 15 AND 49 AND p.p15 <= 7
+    )::numeric /
+    NULLIF(COUNT(*) FILTER (
+      WHERE p.p08 = 2 AND p.p09 BETWEEN 15 AND 49 AND p.p15 > 7
+    ), 0), 2), 0) AS razon_educativa,
+
+  -- % viviendas con hacinamiento (v.ind_hacin_rec IN (2,4))
+  COALESCE(ROUND(
+    COUNT(*) FILTER (
+      WHERE v.ind_hacin_rec IN (2,4)
+    ) * 100.0 /
+    NULLIF(COUNT(*), 0), 2), 0) AS hacinamiento
+
+FROM public.personas AS p
+JOIN public.hogares    AS h ON p.hogar_ref_id    = h.hogar_ref_id
+JOIN public.viviendas  AS v ON h.vivienda_ref_id = v.vivienda_ref_id
+JOIN public.zonas      AS z ON v.zonaloc_ref_id  = z.zonaloc_ref_id
+JOIN public.comunas    AS c ON z.codigo_comuna   = c.codigo_comuna
+
+GROUP BY z.geocodigo, c.nom_comuna
+ORDER BY razon_educativa DESC;
+"
+```
+
+```{r ejecuta y guarda , message=FALSE, warning=FALSE, include=FALSE}
+df_indicadores <- dbGetQuery(con, sql_indicadores)
+```
+
+Considerar que se extrae la geometría de zonas urbanas dentro de la Provincia de Santiago para unirla posteriormente con los indicadores.
+
+```{r geometria censal, message=FALSE, warning=FALSE, include=FALSE}
+sql_geometria <- "
+SELECT
+  geocodigo::double precision AS geocodigo,
+  geom
+FROM dpa.zonas_censales_rm
+WHERE nom_provin = 'SANTIAGO' AND urbano = 1;
+"
+sf_zonas <- st_read(con, query = sql_geometria)
+```
+
+Y hay que cruzar los datos obtenidos en los pasos anteriores para generar una base espacial (`sf_mapa`) lisra para ser visualizada.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+sf_mapa <- merge(x = sf_zonas, y = df_indicadores, by = "geocodigo", all.x = FALSE)
+```
+
+Ante la consulta SQL, obtenemos como resultado final una tabla espacial (`sf_mapa`) que incluye los siguientes campos clave por zona censal:
+
+| Variable | Descripción |
+|------------------------------------|------------------------------------|
+| `geocodigo` | código único de identificación de la zona censal (clave espacial). |
+| `nom_comuna` | nombre de la comuna en la que se encuentra la zona. |
+| `razon_educativa` | índice porcentual entre mujeres con educación básica (p15 ≤ 7) y mujeres con educación superior (p15 \> 7). Valores mayores a 1 indican predominio de mujeres con menor nivel educativo. |
+| `hacinamiento` | porcentaje de viviendas en la zona censal que presentan hacinamiento moderado o crítico (según `ind_hacin_rec`). |
+
+Adicionalmente, en la consulta se vinculan las tablas `viviendas`, `hogares` y `personas` del Censo, lo cual permite calcular el hacinamiento desde el punto de vista de la **vivienda** y no únicamente de las personas. Este enfoque refleja mejor las condiciones habitacionales materiales del territorio.
+
+Esta tabla permite vincular las condiciones educativas y habitacionales de mujeres en edad fértil con su localización territorial, facilitando la generación de visualizaciones temáticas y bivariadas que se analizarán en las siguientes secciones.
+
+Con estos dos indicadores se obtuvieron dos mapas, uno muestra cómo están ditribuidas las mujeres en edad fértil con educación básica por sobre aquellas con educación superior. Es decir, se genera el siguiente indicador:
+
+$$
+\text{Razón educativa} = \left( \frac{\text{Mujeres con educación básica}}{\text{Mujeres con educación superior}} \right) \
+$$Donde:
+
+-   I: Razón de mujeres en edad fértil con educación básica alcanzada sobre mujeres en edad fértil de educación superior alcanzada.
+
+    | Naturaleza del índice I | Descripción |
+    |------------------------------------|------------------------------------|
+    | I \< 1 | Predominan mujeres en edad fértil con educación superior alcanzada. |
+    | I = 1 | Igual cantidad de mujeres con educación básica y superior. |
+    | I \> 1 | Predominan mujeres en edad fértil con educación básica alcanzada. |
+
+Y el otro mapa es el porcentaje de hacinamiento, permite observar en qué zonas hay una mayor proporción de viviendas en condiciones de hacinamiento moderado o crítico. Este indicador refleja vulnerabilidad habitacional y se calcula de la siguiente formula:
+
+$$
+\text{Porcentaje de hacinamiento} = \left( \frac{\text{Viviendas con hacinamiento (niveles 2 o 4)}}{\text{Total de viviendas}} \right) \times 100\
+$$
+
+Además, se genera un gráfico de dispersión por cuadrantes, este relaciona ambos inidacores (razón educativa y hacinamiento), permitiendo identificar zonas de doblre exclusión (alto rezago educativo y alto hacinamiento).
+
+Y finalmente, generamos un mapa bivariado, donde combina ambos indicadores en una sola visualización utilizando una escala de color dual. Este mapa permite detectar rápidamente las zonas donde se concentran simultáneamente altos niveles de desigualdad educativa y habitacional, entregando evidencia útil para el diseño de políticas con enfoque de género y territorial.
+
+------------------------------------------------------------------------
+
+## 2.2 Análisis y Resultados
+
+Del procesamiento de la base de datos del censo en pgAdmin y porteriormente en RStudio, se obtuvieron los siguientes dos mapas que se muestran a continuación:
+
+```{r mapa razon, echo=FALSE, message=FALSE, warning=FALSE}
+map_razon <- ggplot(sf_mapa) +
+  geom_sf(aes(fill = razon_educativa), color = "gray80") +
+  labs(title = "Razón educativa (básica/superior) en mujeres 15–49 años", fill = "Razón") +
+  theme_minimal()
+print(map_razon)
+```
+
+Este mapa representa la **razón educativa**, calculada como la relación entre mujeres con educación básica e intermedia respecto a aquellas con educación superior en el grupo etario de 15 a 49 años. El índice se construyó a partir de la fórmula explicada en la sección de Metodología, donde:
+
+-   Un valor **menor a 1** indica que predominan mujeres con educación superior.
+
+-   Un valor **igual a 1** refleja paridad entre ambos niveles.
+
+-   Un valor **mayor a 1** señala predominancia de mujeres con solo educación básica o media.
+
+A nivel espacial, se aprecia un patrón **claro en las zonas periféricas del sur y poniente**, como **La Pintana, San Ramón, El Bosque y Lo Espejo**, reflejando una fuerte **desigualdad educativa** que afecta principalmente a sectores de bajos ingresos y alta vulnerabilidad social. También aparecen zonas claras en **barrios céntricos antiguos**, donde reside población adulta mayor con trayectorias educativas más cortas.
+
+En contraste, **las zonas del sector oriente de Santiago**, como **Las Condes, Vitacura y Providencia**, presentan tonalidades oscuras, evidenciando una alta proporción de mujeres con estudios superiores. Estas comunas se asocian con mejores condiciones de vida, alto nivel socioeconómico y amplia oferta de educación superior.
+
+Se observa un **gradiente educativo** desde la periferia al centro, especialmente al ingresar al **anillo de Américo Vespucio**, donde comienzan a predominar valores intermedios, indicando un equilibrio entre mujeres con educación básica y superior. A medida que se avanza hacia el centro y oriente, los valores disminuyen por debajo de 1, reflejando mayor nivel educativo en mujeres jóvenes que han accedido a estudios técnicos o universitarios.
+
+Un quiebre importante ocurre en **Santiago Centro**, donde los valores vuelven a subir hacia el sur, y luego disminuyen claramente hacia el norte y oriente. Este fenómeno muestra cómo las **desigualdades educativas** se expresan espacialmente dentro de una misma comuna, debido a la **segmentación socioeconómica y residencial**.
+
+Cabe destacar que uno de los factores estructurales que afecta la continuidad de estudios en mujeres jóvenes es el **embarazo adolescente**, especialmente en zonas más vulnerables. Según la ex subsecretaria Paula Daza (2017), “El embarazo adolescente es un indicador de vulnerabilidad, sobre todo en menores de 15 años. Son menores que forman hogares monoparentales, generalmente quedan solas y dejan de estudiar, se les dificulta trabajar, entonces el efecto que tiene esto en la pobreza es muy grande”.
+
+En conclusión, este mapa no solo muestra la distribución territorial del nivel educativo de las mujeres, sino que también **visibiliza las inequidades estructurales** que afectan sus trayectorias de vida y oportunidades futuras. Constituye una herramienta geodemográfica clave para focalizar políticas públicas con enfoque de género, territorio y equidad educativa.
+
+```{r mapa hacinamiento, echo=FALSE, message=FALSE, warning=FALSE}
+map_hacinamiento <- ggplot(sf_mapa) +
+  geom_sf(aes(fill = hacinamiento), color = "gray80") +
+  labs(title = "Hacinamiento en viviendas", fill = "% Hacinamiento") +
+  theme_minimal()
+print(map_hacinamiento)
+```
+
+El presente mapa muestra la distribución territorial del **hacinamiento en viviendas** en la Región Metropolitana de Santiago, medido como el porcentaje de viviendas que presentan condiciones de hacinamiento dentro de cada zona censal. El indicador refleja la proporción de hogares con más de 2,5 personas por dormitorio, siguiendo los estándares utilizados por el Censo 2017.
+
+Con respecto a la distribución espacial del hacinamineto se logra observar una clara **heterogeneidad espacial** del fenómeno, con una concentración significativa de hacinamiento en sectores del **sur y poniente de la región**, particularmente en comunas como **La Pintana, El Bosque, Lo Espejo, San Ramón, Cerro Navia y Renca**. Estas zonas presentan tonalidades más oscuras en el mapa, lo que indica porcentajes superiores al 15% de hacinamiento, alcanzando en algunos casos valores cercanos al 25%.
+
+En contraste, sectores del **nororiente de la ciudad**, como **Las Condes, Vitacura, Lo Barnechea y Providencia**, exhiben porcentajes muy bajos, incluso cercanos al 0%. Esto sugiere una profunda **desigualdad territorial** en las condiciones habitacionales de la población.
+
+El hacinamiento no solo representa un déficit cuantitativo de vivienda, sino que también está vinculado a **condiciones estructurales de pobreza, exclusión y vulnerabilidad**. Las zonas más afectadas por este fenómeno suelen coincidir con territorios que presentan altos niveles de precariedad socioeconómica, elevada densidad poblacional, y presencia significativa de hogares monoparentales y/o migrantes.
+
+Según el informe de IdeaPaís (2022), más del 60% de las personas que viven en hacinamiento en Chile se concentran en la Región Metropolitana. Este fenómeno se configura como un problema estructural, asociado a la **falta de planificación urbana**, la **especulación del suelo** y la **insuficiente oferta de viviendas sociales adecuadas**.
+
+Además, como señala el Centro de Estudios del Mineduc (2022), las condiciones de hacinamiento tienen efectos directos sobre otras dimensiones del bienestar, como la **educación**, dificultando los procesos de estudio, descanso y desarrollo integral, especialmente en hogares con niños, niñas y adolescentes.
+
+El mapa pone en evidencia la necesidad de **intervenciones focalizadas** que aborden el hacinamiento no solo desde una lógica de construcción de viviendas, sino también desde una **perspectiva integral de bienestar urbano**. Esto implica articular políticas de vivienda con estrategias de desarrollo territorial, acceso equitativo a servicios públicos, y programas de apoyo a las familias en situación de vulnerabilidad.
+
+Asimismo, este análisis cobra especial relevancia en el contexto de estudios de población específica, como mujeres en edad fértil (15–49 años), quienes enfrentan múltiples desventajas cuando habitan en condiciones de hacinamiento, afectando tanto su calidad de vida como la de su entorno familiar.
+
+Con los datos obtenidos, se construye un gráfico de dispersión que representan lo observado en los mapas mostrados anteriormente.
+
+```{r grafico de dispersion, echo=FALSE, message=FALSE, warning=FALSE}
+mediana_razon   <- median(sf_mapa$razon_educativa, na.rm = TRUE)
+mediana_hacinamiento <- median(sf_mapa$hacinamiento, na.rm = TRUE)
+
+sf_mapa$cuadrante <- with(sf_mapa, ifelse(
+  razon_educativa >= mediana_razon & hacinamiento >= mediana_hacinamiento, 'Q1: Alta razón / Alto hacinamiento',
+  ifelse(razon_educativa >= mediana_razon & hacinamiento <  mediana_hacinamiento, 'Q2: Alta razón / Bajo hacinamiento',
+         ifelse(razon_educativa <  mediana_razon & hacinamiento <  mediana_hacinamiento, 'Q3: Baja razón / Bajo hacinamiento',
+                'Q4: Baja razón / Alto hacinamiento'))))
+
+colores_cuadrantes <- c(
+  'Q1: Alta razón / Alto hacinamiento' = '#08519c',
+  'Q2: Alta razón / Bajo hacinamiento' = '#6baed6',
+  'Q3: Baja razón / Bajo hacinamiento' = '#eff3ff',
+  'Q4: Baja razón / Alto hacinamiento' = '#bdd7e7'
+)
+
+grafico_cuadrantes <- ggplot(sf_mapa, aes(x = razon_educativa, y = hacinamiento, color = cuadrante)) +
+  geom_point(size = 2) +
+  geom_vline(xintercept = mediana_razon, linetype = "dashed") +
+  geom_hline(yintercept = mediana_hacinamiento, linetype = "dashed") +
+  scale_color_manual(values = colores_cuadrantes) +
+  labs(x = "Razón educativa (básica/superior)", y = "% Hacinamiento", title = "Dispersión: razón educativa vs hacinamiento") +
+  theme_minimal()
+
+print(grafico_cuadrantes)
+```
+
+En este gráfico de dispersión se muestra la relación entre la **razón educativa** y el **porcentaje de hacinamiento** en zonas censales de la Región Metropolitana.
+
+El gráfico ha sido dividido en cuatro cuadrantes según los promedios de cada variable:
+
+-   **Q1: Alta razón / Alto hacinamiento**: Zonas con mayor proporción de mujeres con educación básica en relación a superior y altos niveles de hacinamiento.
+
+-   **Q2: Alta razón / Bajo hacinamiento**: Alta razón educativa pero bajo hacinamiento
+
+-   **Q3: Baja razón / Bajo hacinamiento**: Sectores con más mujeres con educación superior y con bajos niveles de hacinamiento. Son los territorios con mejores condiciones educativas y habitacionales.
+
+-   **Q4: Baja razón / Alto hacinamiento**: Combinación de bajo nivel educativo y alto hacinamiento, evidenciando mayor vulnerabilidad estructural.
+
+La **concentración de puntos en el cuadrante Q1** indica que existen múltiples zonas donde **se combinan desventajas en educación y vivienda**, reproduciendo patrones de exclusión social y precariedad.
+
+Se pueden destacar algunos **outliers**, ubicados en las esquinas extremas del gráfico:
+
+-    En el **extremo superior derecho**, hay **zonas con hacinamiento muy alto (sobre el 25%) y una razón educativa superior a 1**, lo que indica territorios con muchas mujeres con baja escolaridad relativa y condiciones habitacionales críticas. Estos casos merecen especial atención, pues podrían tratarse de **bolsones de pobreza persistente**, donde convergen múltiples dimensiones de vulnerabilidad.
+
+-   En el **extremo inferior izquierdo**, hay zonas con **muy bajo hacinamiento (menor al 5%) y razón educativa cercana a cero**, lo cual refleja áreas con alta concentración de mujeres con educación superior y condiciones de vivienda adecuadas, generalmente vinculadas a sectores socioeconómicos altos (como el sector oriente de Santiago).
+
+Estos **casos extremos confirman la polarización territorial** existente en la región, donde conviven realidades profundamente contrastantes en términos de acceso a educación y condiciones de vivienda.
+
+Aunque no se representa una línea de tendencia explícita, se advierte una **relación positiva moderada** entre ambas variables: a medida que aumenta la razón educativa (es decir, baja el nivel educativo promedio), también tiende a incrementarse el porcentaje de hacinamiento. Esta tendencia respalda la hipótesis de que **niveles educativos más bajos están asociados a mayores carencias habitacionales**, en línea con lo planteado por estudios del Mineduc (2022) y columnas académicas sobre pobreza y hacinamiento (Universidad de Chile, 2017).
