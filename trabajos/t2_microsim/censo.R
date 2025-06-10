@@ -1,5 +1,5 @@
 # Instalación libreria, solo una vez 
-install.packages("rakeR")
+# install.packages("rakeR")
 
 # Libreria 
 library(rakeR)
@@ -172,7 +172,7 @@ dbExecute(con, "ANALYZE dpa.tmp_fonasa")
 # 1) Crea la nueva capa directamente con un SELECT … LEFT JOIN
 # aplico filtro de que pertenezcan al gran santiago 
 
-# Unions espacil y filtrado Gran Santiago
+# Unions espacial y filtrado Gran Santiago
 # En SQL
 dbExecute(con, "
   CREATE TABLE dpa.zonas_gs_fonasa AS
@@ -189,4 +189,6 @@ dbExecute(con, "
 # Ahora sigue lo mismo que se hizo en el trabajo 1. Mostrar mapa. 
 # SELCCION DE VARIABLE Y PORCENTAJE DE PERSONAS QUE RESPONDEN 
 # HAY QUE RECODIFICAR 
+
+
 
