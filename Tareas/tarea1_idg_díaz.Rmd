@@ -73,7 +73,7 @@ library(scales)
 Cada paquete tiene una función diferente.
 
 | Librería                         | Función                                 |
-|--------------------------------|----------------------------------------|
+|----------------------------------|-----------------------------------------|
 | `tidyverse`                      | Manipulación y visualización de datos.  |
 | `haven`                          | Lectura de archivos `.rds` de CASEN.    |
 | `ggplot` `corrplot` `ggcorrplot` | Visualización de datos y correlaciones. |
@@ -282,7 +282,7 @@ A través de esta matriz es posible observar:
 
     -   **Ingreso y educación** tienen una correlación positiva de **0.31**, lo que sugiere que un mayor nivel educativo tiende a estar asociado con mayores ingresos.
 
-    -    **Edad y educación** presentan una correlación negativa de **-0.29**, indicando que en esta muestra, las personas mayores suelen tener menos años de educación formal.
+    -   **Edad y educación** presentan una correlación negativa de **-0.29**, indicando que en esta muestra, las personas mayores suelen tener menos años de educación formal.
 
 -   Las demás correlaciones son cercanas a cero, lo que sugiere que no hay relaciones fuertes entre las otras variables analizadas.
 
@@ -408,6 +408,6 @@ Para futuras investigaciones, se recomienda explorar modelos más complejos o no
 
 ------------------------------------------------------------------------
 
-# Referencias 
+# Referencias
 
 -   División Observatorio Social. (2023). Nota técnica N°2 – julio 2023. Encuesta de Caracterización Socioeconómica Nacional 2022. Ministerio de Desarrollo Social y Familia.
