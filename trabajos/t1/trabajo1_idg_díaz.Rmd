@@ -174,7 +174,7 @@ Cabe destacar que la construcción de los indicadores consideró la vinculación
 
 La tabla espacial resultante permite relacionar las condiciones educativas y habitacionales de las mujeres en edad fértil con su ubicación geográfica, facilitando así la generación de mapas temáticos y bivariados, los cuales se presentan y analizan en las secciones siguientes.
 
-### 2.1.3. Indicadores 
+### 2.1.3. Indicadores
 
 La razón educativa (*I)*, se calcula mediante la fórmula:
 
@@ -198,7 +198,7 @@ $$
 
 refleja las condiciones de vulnerabilidad habitacional en cada zona censal.
 
-### 2.1.4. Visualización  
+### 2.1.4. Visualización
 
 Se generaron tres productos visuales para el análisis:
 
