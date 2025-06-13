@@ -132,13 +132,13 @@ sim_df$es_mujer  = ifelse(sim_df$sexo_cat == "sexo_f", 1, 0)
 fonasa = aggregate(
   fonasa ~ COMUNA,
   data = sim_df,
-  FUN  = function(x) sum(x, na.rm = TRUE)
+  FUN  = function(x) mean(x, na.rm = TRUE)
 )
 names(fonasa) <- c("geocodigo", "fonasa")
 #zonas_ypc = aggregate(
 #  ypc ~ zone,
- # data = sim_df,
-  #FUN  = function(x) median(x, na.rm = TRUE)
+# data = sim_df,
+#FUN  = function(x) median(x, na.rm = TRUE)
 #)
 
 # El grafico de mi variable (considerar que los varoles extremos arruinan la distribucion)
@@ -174,16 +174,15 @@ dbExecute(con, "ANALYZE dpa.tmp_fonasa")
 
 # Unions espacial y filtrado Gran Santiago
 # En SQL
-# 1) Crea la nueva capa directamente con un SELECT … LEFT JOIN
 dbExecute(con, "
-  CREATE TABLE dpa.zonas_censales_gs_income AS
+  CREATE TABLE dpa.zonas_gs_fonasa AS
   SELECT
     z.*,
-    t.mediana_ingreso
+    t.fonasa
   FROM dpa.zonas_censales_rm AS z
-  LEFT JOIN dpa.tmp_ingreso_rm AS t
+  LEFT JOIN dpa.tmp_fonasa AS t
     ON z.geocodigo::text = t.geocodigo
-WHERE urbano = 1 AND (nom_provin = 'SANTIAGO' OR nom_comuna = 'SAN BERNARDO' OR nom_comuna = 'PUENTE ALTO')
+  WHERE urbano = 1 AND (nom_provin = 'SANTIAGO' OR nom_comuna = 'SAN BERNARDO' OR nom_comuna = 'PUENTE ALTO')
 ")
 # APERTURA DE QGIS , para ver si funciono la simulacion 
 
@@ -191,5 +190,85 @@ WHERE urbano = 1 AND (nom_provin = 'SANTIAGO' OR nom_comuna = 'SAN BERNARDO' OR 
 # SELCCION DE VARIABLE Y PORCENTAJE DE PERSONAS QUE RESPONDEN 
 # HAY QUE RECODIFICAR 
 
+# =============================================================================
+# Microsimulación ISAPRE - Mujeres afiliadas a ISAPRE
+# =============================================================================
 
+# Variable dummy: isapre = 1 si está afiliada a ISAPRE
+sim_df$isapre = ifelse(sim_df$s13 == 5 & sim_df$sexo_cat == "sexo_f", 1, 0)
+
+# Proporción de mujeres en ISAPRE por comuna
+isapre = aggregate(
+  isapre ~ COMUNA,
+  data = sim_df,
+  FUN  = function(x) mean(x, na.rm = TRUE)
+)
+names(isapre) <- c("geocodigo", "isapre")
+isapre$geocodigo <- as.character(isapre$geocodigo)
+
+# Guardamos en base de datos
+dbWriteTable(
+  conn      = con,
+  name      = Id(schema = "dpa", table = "tmp_isapre"),
+  value     = isapre,
+  overwrite = TRUE,
+  row.names = FALSE
+)
+dbExecute(con, "CREATE INDEX ON dpa.tmp_isapre(geocodigo)")
+dbExecute(con, "ANALYZE dpa.tmp_isapre")
+
+# Unir geometría y crear nueva tabla con resultados ISAPRE
+dbExecute(con, "
+  CREATE TABLE dpa.zonas_gs_isapre AS
+  SELECT
+    z.*,
+    t.isapre
+  FROM dpa.zonas_censales_rm AS z
+  LEFT JOIN dpa.tmp_isapre AS t
+    ON z.geocodigo::text = t.geocodigo
+  WHERE urbano = 1 AND (nom_provin = 'SANTIAGO' OR nom_comuna = 'SAN BERNARDO' OR nom_comuna = 'PUENTE ALTO')
+")
+
+# Librerías necesarias para los mapas
+library(sf)
+library(ggplot2)
+library(viridis)  # para paleta de color bonita
+
+# =============================================================================
+# CARGA DE GEOMETRÍA CON VARIABLE FONASA
+# =============================================================================
+
+# Cargar zonas con proporción mujeres afiliadas a FONASA
+sf_fonasa <- st_read(con, query = "
+  SELECT geocodigo::double precision AS geocodigo, fonasa, geom
+  FROM dpa.zonas_gs_fonasa
+")
+
+# Mapa de mujeres afiliadas a FONASA
+mapa_fonasa <- ggplot(sf_fonasa) +
+  geom_sf(aes(fill = fonasa), color = "#AAAAAA30", size = 0.1) +
+  scale_fill_viridis_c(option = "B", direction = -1, name = "% FONASA") +
+  labs(title = "Mujeres afiliadas a FONASA (Gran Santiago)") +
+  theme_minimal()
+
+print(mapa_fonasa)
+
+# =============================================================================
+# CARGA DE GEOMETRÍA CON VARIABLE ISAPRE
+# =============================================================================
+
+# Cargar zonas con proporción mujeres afiliadas a ISAPRE
+sf_isapre <- st_read(con, query = "
+  SELECT geocodigo::double precision AS geocodigo, isapre, geom
+  FROM dpa.zonas_gs_isapre
+")
+
+# Mapa de mujeres afiliadas a ISAPRE
+mapa_isapre <- ggplot(sf_isapre) +
+  geom_sf(aes(fill = isapre), color = "#AAAAAA30", size = 0.1) +
+  scale_fill_viridis_c(option = "C", direction = -1, name = "% ISAPRE") +
+  labs(title = "Mujeres afiliadas a ISAPRE (Gran Santiago)") +
+  theme_minimal()
+
+print(mapa_isapre)
 
