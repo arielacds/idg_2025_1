@@ -13,7 +13,7 @@ h1.title {
 </style>
 ```
 
-# 1. Introducción 
+# 1. Introducción
 
 El sistema previsional de salud de Chile se encuentra dividido entre el Fondo Nacional de Salud (FONASA) y las instituciones de Salud Previsional (ISAPRE), lo que genera profundas desigualdades en el acceso, cobertura y calidad del servicio de salud. Estas desigualdades no se distribuyen de manera uniforme entre la población, sino que presentan una dimensión estructural marcada por el género. Dado que las mujeres, en particular, enfrentan barreras diferenciadas que afectan su afiliación, sus costos y sus probabilidades reales de elección del sistema al que adscribirse.
 
@@ -23,7 +23,7 @@ Asimismo, la distribución territorial del acceso al sistema privado también pr
 
 Ante este contexto, el presente trabajo busca analizar la distribución espacial de mujeres y hombres afiliados a los distintos sistemas de salud, poniendo foco en la situación de las mujeres afiliadas a FONASA e ISAPRE. Para ello, se aplica una metodología de microsimulación espacial mediante el paquete `rakeR` en R, a partir de la información de la Encuesta CASEN 2022 y el CENSO 2017. Esta técnica permite desagregar la información individual a nivel de zona censal, lo que posibilita realizar un análisis preciso y territorializado.
 
-## 1.1. Objetivo General 
+## 1.1. Objetivo General
 
 Analizar la distribución territorial de mujeres afiliadas a FONASA e ISAPRE, y hombres afiliados a ISAPRE, en el Gran Santiago, mediante la microsimulación espacial aplicada sobre la base datos CASEN 2022, desagregada a nivel de zona censal con información del CENSO 2017.
 
@@ -41,14 +41,14 @@ Los objetivos específicos a trabajar son:
 
 La variable seleccionada para este trabajo es `s13`, correspondiente al sistema previsional de salud de las personas encuestadas en CASEN 2022. Esta variable distingue diferentes afiliaciones y frecuencias, mostradas en la tabla a continuación.
 
-| ¿A qué sistema de previsión de salud pertenece?  | Frecuencia |
-|--------------------------------------------------|------------|
-| Sistema Público FONASA (Tramo A, B, C y D)       | 171.395    |
-| ISAPRE                                           | 20.033     |
-| FF.AA. y del Orden                               | 3.604      |
-| Ninguno                                          | 4.897      |
-| No sabe                                          | 1.639      |
-| Otro sistema                                     | 663        |
+| ¿A qué sistema de previsión de salud pertenece? | Frecuencia |
+|-------------------------------------------------|------------|
+| Sistema Público FONASA (Tramo A, B, C y D)      | 171.395    |
+| ISAPRE                                          | 20.033     |
+| FF.AA. y del Orden                              | 3.604      |
+| Ninguno                                         | 4.897      |
+| No sabe                                         | 1.639      |
+| Otro sistema                                    | 663        |
 
 Para efecto de este estudio, se excluyeron las otras categorías de afiliación por la baja representatividad.
 
@@ -60,7 +60,7 @@ Este trabajo de dividirá en Metodología, Resultados, Análisis, Conclusión y 
 
 # 2. Desarrollo
 
-## 2.1. Metodología 
+## 2.1. Metodología
 
 Para el desarrollo metodológico de este trabajo se utilizaron dos herramientas principales: pgAdmin y RStudio. Estas plataformas fueron empleadas con el objetivo de procesar, analizar y visualizar datos provenientes del Diccionario Censal 2017 y la Encuesta CASEN 2022, en el marco de un enfoque de microsimulación espacial con prespectiva de género.
 
@@ -68,7 +68,7 @@ El análisis se centró exclusivamente en las zonas urbanas de la Provincia de S
 
 En este caso, se seleccionó como variable principal a microsimular la variable `s13` de CASEN, correspondiente al sistema previsional de salud, con el objetivo de estimar su distribución por la zona censal para las mujeres afiliadas a FONASA, mujeres afiliadas a ISAPRE y hombres afiliados a ISAPRE. Cada uno de estos fue convertido en una variable binaria, y simulado de forma independiente.
 
-### 2.1.1. Librerías necesarias 
+### 2.1.1. Librerías necesarias
 
 Para desarrollar el análisis en R se cargaron las siguiente librerías:
 
@@ -85,7 +85,7 @@ library(here)
 
 Estas librerías permiten realizar la microsimulación (`rakeR`), establecer conexiones con bases de datos en PostgreSQL (`RPostgres`), el manejo de la base de datos (`DBI`) y de datos espaciales (`sf`) , entre otras funciones.
 
-### 2.1.2. Carga y preparación de datos 
+### 2.1.2. Carga y preparación de datos
 
 Con la carga de librerías, se puede cargar las bases de datos necesarias para la microsimulación. Se utilizaron dos fuentes:
 
@@ -134,7 +134,7 @@ casen$sexo <- as.integer(unclass(casen$sexo))
 casen$s13 <- as.numeric(unclass(casen$s13))
 ```
 
-### 2.1.3. Recodificación de variables y construcción de indicadores 
+### 2.1.3. Recodificación de variables y construcción de indicadores
 
 Una vez realizado los pasos anteriores, se procede a construir las variables de interés que serían utilizadas para la microsimulación. Como se menciona en la introducción, este trabajo se centra en analizar la distribución territorial de las mujeres afiliadas a FONASA, mujeres afiliadas a ISAPRE y los hombres afiliados a ISAPRE.
 
@@ -154,7 +154,7 @@ casen$hombre_isapre  <- ifelse(casen$sexo == 1 & casen$s13 == 2, 1, 0)
 
 Estas variables toman el valor 1 si el individuo pertenece al grupo descrito y 0 en caso de que no. Esto nos permite comparar entre grupos bajo un mismo modelo de simulación, lo que facilita identificar patrones espaciales diferenciales y observar posibles sesgos estructurales en el acceso a la salud.
 
-### 2.1.4. Imputación y categorización 
+### 2.1.4. Imputación y categorización
 
 Para el proceso de microsimulación, `rakeR` tiene que trabajar con variables categóricas (factors) que permiten ajustar la población simulada a las restricciones agregadas del CENSO. En este caso, se utilizan edad, escolaridad y sexo. Estas variables con importantes, porque permiten mantener la estructura sociodemográfica de cada zona censal durante el proceso de ponderación.
 
@@ -198,7 +198,7 @@ casen$sexo_cat <- factor(ifelse(casen$sexo == 2, sexo_levels[1],
                          levels = sexo_levels)
 ```
 
-### 2.1.5. Microsimulación 
+### 2.1.5. Microsimulación
 
 Luego de tener las variables procesadas y categorizadas, se procedió a aplicar la microsimulación espacial.
 
@@ -277,7 +277,7 @@ con <- dbConnect(Postgres(), dbname = "censo_rm_2017", host = "localhost", port 
 
 ------------------------------------------------------------------------
 
-## 2.2. Análisis y resultados 
+## 2.2. Análisis y resultados
 
 La presente sección muestra los resultados obtenidos tras la microsimulación espacial aplicada sobre los datos de la CASEN 2022, desagregados a nivel de zona censal urbana en la RM. Se presentan tres mapas, correspondientes a:
 
@@ -351,7 +351,7 @@ Desde una perspectiva de género esta concentración espacial no es una elecció
 
 Como menciona el Instituto Igualdad (2018), "la adscripción de las mujeres al sistema público responde a una combianción de factores económicos, territoriales y culturales que reflejan y refuerzan su exclusión del modelo de salud basado en la lógica del mercado".
 
-### 2.2.2. Mujeres afiliadas a ISAPRE 
+### 2.2.2. Mujeres afiliadas a ISAPRE
 
 El segundo grupo simulado corresponde a las mujeres afiliadas al sistema de salud privado (ISAPRE). El mapa muestra su distribución espacial estimada por zona censal en la Región Metropolitana.
 
@@ -370,7 +370,7 @@ Como menciona Carrasco (2022), "la discriminación estructural hacia las mujeres
 
 Esta exclusión territorial se refuerza con la evidencia reportada por la Superintendencia de Salud (2023), donde se constata que las mujeres pagan un 24% más que los hombres por un plan equivalente, y tienen acceso a menor cobertura en prestaciones ginecológicas y maternales. Esta combinación de sobrecosto y menor acceso se traduce en una infrarrepresentación de mujeres en el sistema privado, incluso en sectores donde existen hombres afiliados.
 
-### 2.2.3. Hombres afiliados a ISAPRE 
+### 2.2.3. Hombres afiliados a ISAPRE
 
 El tercer mapa presenta la proporción estimada de hombres afiliados a ISAPRE por zona censal.
 
@@ -409,7 +409,7 @@ Estas conclusiones están relacionadas con lo que señala la Defensoría de la S
 
 ------------------------------------------------------------------------
 
-# 3. Conclusión 
+# 3. Conclusión
 
 Para finalizar el trabajo realizado podemos concluir que, se cumplió satisfactoriamente el objetivo general de analizar territorialmente la distribución de afiliación previsional en salud diferenciada por sexo, mediante la estimación de la proporción de mujeres afiliadas a FONASA, mujeres afiliadas a ISAPRE y hombres afiliados a ISAPRE en la Región Metropolitana de Santiago, utilizando herramientas de microsimulación espacial y visualización temática a nivel de zona censal. Asimismo, se cumplieron los objetivos específicos, los cuales contemplaban la aplicación de una metodología, la comparación de resultados entre grupos y la incorporación de una perspectiva de género en el análisis.
 
@@ -421,7 +421,7 @@ En conclusión, desde una perspectiva territorial y de género, los resultados o
 
 ------------------------------------------------------------------------
 
-# 4. Bibliografía 
+# 4. Bibliografía
 
 -   Carrasco, P. (2022). *Discriminación de género en el sistema de Isapres: Un análisis desde la perspectiva de las mujeres afiliadas*. Universidad de Chile. Repositorio institucional. <https://repositorio.uchile.cl/bitstream/handle/2250/184929/Tesis%20-%20Paula%20Carrasco.pdf>
 
