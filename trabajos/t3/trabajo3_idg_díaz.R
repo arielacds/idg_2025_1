@@ -28,27 +28,18 @@ sql_indicadores <- "
 SELECT
   z.geocodigo::double precision AS geocodigo,
   c.nom_comuna,
-
-  -- Porcentaje de personas con escolaridad ≥ 12 años
+  --- Porcentaje de escolaridad >= 12
   ROUND(
     COUNT(*) FILTER (WHERE p.escolaridad >= 12) * 100.0
     / NULLIF(COUNT(*) FILTER (WHERE p.escolaridad IS NOT NULL), 0),
-  2) AS ptje_esc_mayor_12,
-
-  -- Porcentaje de mujeres en edad fértil (15 a 50 años)
-  ROUND(
-    COUNT(*) FILTER (WHERE p.p08 = 2 AND p.p09 BETWEEN 15 AND 50) * 100.0
-    / NULLIF(COUNT(*) FILTER (WHERE p.p08 = 2), 0),
-  2) AS ptje_mujeres_edad_fertil
-
+  2) AS esc_mayor_12
 FROM public.personas   AS p
 JOIN public.hogares    AS h ON p.hogar_ref_id = h.hogar_ref_id
 JOIN public.viviendas  AS v ON h.vivienda_ref_id = v.vivienda_ref_id
 JOIN public.zonas      AS z ON v.zonaloc_ref_id = z.zonaloc_ref_id
 JOIN public.comunas    AS c ON z.codigo_comuna = c.codigo_comuna
-
 GROUP BY z.geocodigo, c.nom_comuna
-ORDER BY ptje_esc_mayor_12 DESC;
+ORDER BY esc_mayor_12 DESC;
 "
 df_indicadores <- dbGetQuery(con, sql_indicadores)
 
@@ -81,15 +72,14 @@ vars_scaled <- scale(df_clusters[, c(
   "mujeres_fonasa",
   "mujeres_isapre",
   "mediana_ingreso",
-  "ptje_esc_mayor_12",
-  "ptje_mujeres_edad_fertil"
+  "esc_mayor_12"
 )])
 
 # Método del codo para determinar número óptimo de clusters
 fviz_nbclust(vars_scaled, kmeans, method = "wss") +
   labs(title = "Método del Codo", x = "Número de Clusters", y = "WSS")
 
-# Clustering con k=4
+# Cluster con K-means
 set.seed(123)
 km <- kmeans(vars_scaled, centers = 3, nstart = 25)
 # k = 3, despues de este no hay inclinaciones considerables
@@ -139,16 +129,6 @@ ggplot(df_clusters, aes(x = mujeres_isapre, y = ptje_esc_mayor_12, color = clust
   ) +
   theme_minimal()
 
-# Mujeres FONASA vs Edad fértil
-ggplot(df_clusters, aes(x = mujeres_fonasa, y = ptje_mujeres_edad_fertil, color = cluster)) +
-  geom_point(size = 2) +
-  labs(
-    title = "Edad fértil vs Mujeres afiliadas a FONASA",
-    x = "% Mujeres FONASA",
-    y = "% Mujeres en edad fértil (15-50)"
-  ) +
-  theme_minimal()
-
 # =============================================================================
 # Mapa de clusters
 # =============================================================================
@@ -165,20 +145,19 @@ ggplot() +
   geom_sf(data = sf_comunas, fill = NA, color = "black", size = 0.4) +
   geom_sf_text(data = st_centroid(sf_comunas), aes(label = nom_comuna), size = 2) +
   scale_fill_brewer(palette = "Set2", name = "Cluster") +
-  labs(title = "Clusters por afiliación femenina, ingreso, escolaridad y edad fértil",
+  labs(title = "Clusters por afiliación femenina, ingreso y escolaridad",
        subtitle = "Zonas Censales Urbanas – Gran Santiago") +
   coord_sf(xlim = c(bbox["xmin"], bbox["xmax"]), ylim = c(bbox["ymin"], bbox["ymax"]), expand = FALSE) +
   theme_void()
 
 # =============================================================================
-# Matriz de correlación y gráficos 2D
+# Matriz de correlación 
 # =============================================================================
 df_plot <- df_clusters[, c(
   "mujeres_fonasa",
   "mujeres_isapre",
   "mediana_ingreso",
   "ptje_esc_mayor_12",
-  "ptje_mujeres_edad_fertil",
   "cluster"
 )]
 
