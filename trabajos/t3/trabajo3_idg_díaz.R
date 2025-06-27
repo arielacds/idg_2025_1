@@ -8,6 +8,7 @@ library(dplyr)        # Manipulación de datos
 library(ggplot2)      # Gráficos base
 library(factoextra)   # Método del codo
 library(GGally)       # ggpairs
+library(entropy)
 
 # =============================================================================
 # Conexión base de datos 
@@ -120,7 +121,7 @@ ggplot(df_clusters, aes(x = mujeres_isapre, y = mediana_ingreso, color = cluster
   theme_minimal()
 
 # Mujeres ISAPRE vs Escolaridad
-ggplot(df_clusters, aes(x = mujeres_isapre, y = ptje_esc_mayor_12, color = cluster)) +
+ggplot(df_clusters, aes(x = mujeres_isapre, y = esc_mayor_12, color = cluster)) +
   geom_point(size = 2) +
   labs(
     title = "Escolaridad vs Mujeres afiliadas a ISAPRE",
@@ -157,7 +158,7 @@ df_plot <- df_clusters[, c(
   "mujeres_fonasa",
   "mujeres_isapre",
   "mediana_ingreso",
-  "ptje_esc_mayor_12",
+  "esc_mayor_12",
   "cluster"
 )]
 
@@ -181,3 +182,32 @@ df_clusters %>%
     isapre  = mean(mujeres_isapre, na.rm = TRUE),
     escolaridad = mean(ptje_esc_mayor_12, na.rm = TRUE)
   )
+
+# ==============================================================
+# Analisis intra-comunal
+# ================================================================
+
+# Calcular índice de Shannon por comuna 
+
+tabla_cluster_comuna <- df_clusters %>%
+  group_by(nom_comuna, cluster) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(nom_comuna) %>%
+  mutate(freq = n / sum(n)) %>%
+  summarise(shannon = -sum(freq * log(freq)), .groups = "drop")
+
+# Unir geometría comunal 
+
+sf_shannon <- sf_comunas %>%
+  left_join(tabla_cluster_comuna, by = "nom_comuna")
+
+# Mapa de variabilidad intra-comunal 
+
+ggplot(sf_shannon) +
+  geom_sf(aes(fill = shannon), color = "black", size = 0.3) +
+  scale_fill_viridis_c(option = "plasma", name = "Índice de Shannon") +
+  labs(
+    title = "Variabilidad intra-comunal de clusters",
+    subtitle = "Índice de Shannon por comuna (mayor valor = mayor diversidad de clusters)"
+  ) +
+  theme_minimal()
