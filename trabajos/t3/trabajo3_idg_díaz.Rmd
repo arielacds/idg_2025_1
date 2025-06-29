@@ -1,5 +1,0 @@
----
-title: "trabajo3_idg_díaz"
-output: html_document
----
-
