@@ -1,0 +1,500 @@
+---
+title: "Segmentación previsional femenina en el Gran Santiago: análisis territorial mediante clustering con variables simuladas"
+author: "Ariela Díaz Santander"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{=html}
+<style>
+h1.title {
+  text-align: center;
+}
+</style>
+```
+
+# 1. Introducción
+
+En Chile, el sistema de salud previsional opera bajo una lógica profundamente segmentada entre el subsistema público (FONASA) y el privado (ISAPRE), lo que genera importantes brechas de acceso, calidad y financiamiento. Esta segementación afecta particularmente a las mujeres, quienes históricamente han enfrentado condiciones discriminatorias en el acceso a la previsión privada. Según el Instituto Igualdad (2018), las ISAPREs han aplicado políticas que penalizan la edad fértil, la maternidad y las enfermedades ginecológicas, generando sobrecostos y restricciones contractuales para las mujeres, incluso con igual nivel de ingreso y cotización que los hombres.
+
+Esta discriminación estructural ha sido reconocida en informes de la Defensoría de la Salud (2022) y la Superintendencia de Salud (2023), los cuales señalan que, en promedio, las mujeres llegan a pagar hasta un 62% más que los hombres por un plan de salud similar, con menores coberturas y mayores exclusiones. Como consecuencia, la afiliación femenina a ISAPRE ha disminuido sostenidamente, mientras que la dependencia del sistema público (FONASA) se ha profundizado en los grupos de menores ingresos y menor capital educativo.
+
+Frente a este escenario, el presente trabajo busca analizar territorialmente la segmentación previsional femenina en las zonas censales urbanas del Gran Santiago. Para ello, se utilizaron técnicas de análisis multivariado y clusterin espacial, que permiten identificar perfiles territoriales diferenciados en función de la afilización previsional, el ingreso y la escolaridad de la población.
+
+Metodológicamente, este análisis se basará en las variables microsimuladas en el Trabajo 2, correspondientes al porcentaje de mujeres afiliadas a FONASA y a ISAPRE . A estas se sumó, para el desarrollo del presente trabajo, la microsimulación de la mediana del ingreso per cápita, trabajad en clases. Estas tres variables fueron utilizadas como base para la aplicación del modelo del clustering, permitiendo identificar perfiles territoriales diferenciados según condiciones previsionales y socioeconómicas.
+
+Complementariamente, se integró un indicador censal de escolaridad (porcentaje de personas con 12 o más años de estudio), con el fin de incorporar una dimensión estructural del capital educativo de la población. Así, este estudio busca no solo evidenciar desigualdades en el acceso previsional femenino, sino también poner de relieve cómo estas se articulan con el ingreso y la educación, reproduciendo segmentaciones sociales a través del territorio.
+
+## 1.1. Objetivo general
+
+El objetivo general de este trabajo será analizar territorialmente la segmentación previsional femenina en las zonas censales urbanas del Gran Santiago, a partir de variables simuladas de afiliación e ingreso, mediante técnicas de clusterización multivariable.
+
+## 1.2. Objetivos específicos
+
+Los objetivos específicos a trabajar son:
+
+1.  Incorporar variables simuladas de afiliación previsional e ingreso per cápita como base del análisis territorial.
+2.  Aplicar un modelo de clusterización que identifique perfiles diferenciados según previsión, ingreso y escolaridad.
+3.  Interpretar los resultados desde un enfoque de género, considerando la evidencias sobre discriminación en el sistema ISAPRE.
+
+------------------------------------------------------------------------
+
+# 2. Desarrollo
+
+## 2.1. Metodología
+
+Para el desarrollo metodológico de este trabajo se utilizaron dos herramientas principales: pgAdmin y RStudio. Estas plataformas fueron empleadas para procesar, analizar y visualizar datos provenientes del CENSO 2017 y la Encuesta CASEN 2022, en el marco de un enfoque de microsimulación espacial con perspectiva de género. A través de consultas SQL, se integraron variables previamente simuladas en trabajos anteriores (como mujeres afiliadas a FONASA e ISAPRE), así como otras simuladas durante el desarrollo de este análisis (como mediana de ingreso per cápita), utilizando bases y geometrías almacenadas en una base relacional.
+
+Al igual que en el Trabajo 2, el análisis se centro exclusivamente en las zonas urbanas de la Provincias de Santiago, correspondiente a la Región Metropolitana.
+
+### 2.1.1. Librerías necesarias
+
+Para desarrollar correctamente el trabajo, se cargaron las principales librerías necesarias:
+
+```{r librerias, echo=TRUE, message=FALSE, warning=FALSE}
+library(DBI)          # Conexión a bases de datos
+library(RPostgres)    # Conector con PostgreSQL
+library(sf)           # Manejo de geometría espacial
+library(dplyr)        # Manipulación de datos
+library(tidyr)        # Índice de Shannon
+library(ggplot2)      # Gráficos base, visualización 
+library(factoextra)   # Método del codo
+library(GGally)       # Matriz de correlación
+library(vegan)        # Cálculo del Índice de Shannon
+library(knitr)
+```
+
+Estas librerías permiten la conexión a la base de datos PostgreSQL (`DBI`, `RPostgres`), el manejo de geometrías espaciales (`sf`), la manipulación de datos (`dplyr` ,`tidyr`), la visualización (`ggplot2`), el análisis de agrupamiento (`factoextra`, `GGally`) y el cálculo del índice de Shannon (`vegan`).
+
+### 2.1.2. Conexión a base de datos PostgreSQL
+
+Para acceder a las tablas del CENSO 2017, las variables simuladas en el Trabjo 2 y las geometrías espaciales, se estableció una conexión a la base de datos PostgreSQL local. Aquí, esta contenida toda la información relevante para el análisis.
+
+```{r conexion, echo=TRUE, message=FALSE, warning=FALSE}
+con <- dbConnect(
+  Postgres(),
+  dbname = "censo_rm_2017",
+  host = "localhost",
+  port = 5432,
+  user = "postgres",
+  password = "postgres"
+)
+```
+
+### 2.1.3. Consulta de variable censal: Escolaridad
+
+Dado que el análisis se centra en las mujeres, se ajustó la consulta censal para calcular el porcentaje de mujeres con 12 o más años de escolaridad por zona censal urbana. Esta variable actúa como un indicador del capital educativo femenino, y fue calculada derectamente desde la base del CENSO 2017, por SQL.
+
+```{r ESCOLARIDAD, echo=TRUE, message=FALSE, warning=FALSE}
+sql_indicadores <- "
+SELECT
+  z.geocodigo::double precision AS geocodigo,
+  c.nom_comuna,
+  --- Porcentaje de escolaridad >= 12
+  ROUND(
+    COUNT(*) FILTER (WHERE p.p08 = 2 AND p.escolaridad >= 12) * 100.0
+    / NULLIF(COUNT(*) FILTER (WHERE p.p08 = 2 AND p.escolaridad IS NOT NULL), 0),
+  2) AS esc_muj_mayor_12
+FROM public.personas   AS p
+JOIN public.hogares    AS h ON p.hogar_ref_id = h.hogar_ref_id
+JOIN public.viviendas  AS v ON h.vivienda_ref_id = v.vivienda_ref_id
+JOIN public.zonas      AS z ON v.zonaloc_ref_id = z.zonaloc_ref_id
+JOIN public.comunas    AS c ON z.codigo_comuna = c.codigo_comuna
+GROUP BY z.geocodigo, c.nom_comuna;
+"
+```
+
+```{r CONEXION Y SQL, message=FALSE, warning=FALSE, include=FALSE}
+df_indicadores <- dbGetQuery(con, sql_indicadores)
+```
+
+Se utilizó `p08` del CENSO, donde el valor 2 corresponde a mujeres. El cálculo se hizo a nivel de zona censal, y se consideraron solos los casos donde la escolaridad estaba registrada.
+
+Esta variable permite capturar el nivel educativo promedio de la población en cada zona censal urbana, utilizado como medida representativa del capital educativo estructural.
+
+### 2.1.4. Consulta de variables simuladas
+
+Se incorporaron al análisis tres variables simuladas mediante microsimulación espacial con la herramienta `rakeR` (trabajo 2), a partit de la Encuesta CASEN 2022:
+
+-   Porcentaje de mujeres afiliadas a FONASA, simulada en el Trabajo 2.
+
+-   Porcentaje de mujeres afiliadas a ISAPRE, también simulada en el Trabajo anterior.
+
+-   Mediana ingreso per cápita, que fue simulada para este trabajo en clases.
+
+```{r VARIABLES SIMULADAS, echo=TRUE, message=FALSE, warning=FALSE}
+sql_simuladas <- "
+SELECT
+  f.geocodigo::double precision AS geocodigo,
+  f.mujeres_fonasa,
+  m.mujeres_isapre,
+  y.mediana_ingreso
+FROM dpa.tmp_fonasa_rm  AS f
+JOIN dpa.tmp_isapre_m   AS m ON f.geocodigo = m.geocodigo
+JOIN dpa.tmp_ingreso_rm AS y ON f.geocodigo = y.geocodigo;
+"
+df_sim <- dbGetQuery(con, sql_simuladas)
+```
+
+Estas variables fueron consultadas directamente desde la base de PostgreSQL, donde se habían guardado previamente en tablas temporales. Donde, cada variable representa un porcentaje o valor estimado por zona censal urbana.
+
+### 2.1.5. Unión de datos y aplicación de clustering
+
+Una vez obtenidas las variables simuladas y la variable censal de escolaridad, se juntaron en una misma tabla usando el identificador `geocodigo` , permitiendo relacionar correctamente la información po zona censal. Esta unión permitió tener todos los datos necesarios para aplicar el análisis de agrupamiento.
+
+Luego se seleccionaron las cuatro variables que se usarían en el clustering:
+
+-   \% mujeres afiliadas a FONASA
+
+-   \% mujeres afiliadas a ISAPRE
+
+-   Mediana de ingreso per cápita
+
+-   \% de personas con escolaridad ≥ 12 años
+
+```{r transformacion, echo=TRUE, message=FALSE, warning=FALSE}
+df_clusters <- df_sim %>%
+  left_join(df_indicadores, by = "geocodigo")
+
+vars_scaled <- scale(df_clusters[, c(
+  "mujeres_fonasa",
+  "mujeres_isapre",
+  "mediana_ingreso",
+  "esc_muj_mayor_12"
+)])
+```
+
+Las variables se escalaron con la función `scales()`, lo que significa que se transformaron para que tengan la misma unidad de medida (con media cero y desviación estándar uno). Con esto es para que ninguna variable pese más que otra en el modelo de clustering, es decir, normalizamos.
+
+Esta etapa es clave en el análisis, ya que determina cúantos grupos o clusters se deben utilizar apara segmentar las zonas censales. Para ello, se usa el Método del Codo, que es una técnica bastante común, que ayuda a identificar el valor óptimo de K (número de clusters) en algoritmo K-means.
+
+```{r METODO DEL CODO, echo=TRUE, message=FALSE, warning=FALSE}
+fviz_nbclust(vars_scaled, kmeans, method = "wss") +
+  labs(title = "Método del Codo", x = "Número de Clusters", y = "WSS")
+```
+
+En base a la caída de la curva de WSS (Within-Cluster Sum of Squares), se seleccionó K = 3, ya que luego de ese punto las mejoras eran marginales, es decir, añadir más clusters no aporta una reducción significativa en la variabilidad interna.
+
+Finalmente, se aplicó al algoritmo K-means con semilla fija para asegurar reproducibilidad. Esto significa que, si el código se vuelve a ejecutar, se obtendran los mismos resultados de agrupación.
+
+```{r K-means, echo=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+set.seed(123)
+km <- kmeans(vars_scaled, centers = 3, nstart = 25)
+# k = 3, despues de este no hay inclinaciones considerables
+df_clusters$cluster <- as.factor(km$cluster)
+```
+
+### 2.1.6. Carga de zonas censales
+
+Una vez ejecutado el modelo de clustering y asignado un grupo a cada zona censal, se procede a cargar la capa geoespacial de zonas censales urbanas en la Región Metropolitana, el Gran Santiago. Esta capa contien los polígonos que defines los límites espaciales de cada zona.
+
+```{r geometria , echo=TRUE, message=FALSE, warning=FALSE}
+sql_geom <- "
+SELECT geocodigo::double precision AS geocodigo, geom
+FROM dpa.zonas_censales_rm
+WHERE nom_provin = 'SANTIAGO' AND urbano = 1;
+"
+sf_zonas <- st_read(con, query = sql_geom)
+sf_mapa <- merge(sf_zonas, df_clusters, by = "geocodigo")
+```
+
+Por lo tanto, se realizó la unión espacial entre los resultados del clustering y la geometría de las zonas censales, usando `geocodigo`. Y crear un objeto espacila (`sf_mapa`) que combina atributos con la forma geográfica, permitiendo la visualización en mapas.
+
+## 2.2. Análisis y resultados
+
+El objetivo de esta sección es presentar e interpretar los resultados del análsiis de segemntación territorial con enfoque de género, aplicado a las zonas censales urbanas del Gran Santiago. La metodología se fundamenta en un modelo de clustering multivariable, construido sobre cuatro dimanesiones clave: ingreso por cápita (simulado), afiliación previsional femenino (FONASA e ISAPRE, simuladas en el Trabajo 2), y escolaridad femenina (extraída del CENSO 2017).
+
+Estas dimensiones fueron seleccionadas por un vínculo directo con las formas estructurales de discriminación que enfrentan las mujeres en el sistema previsional chileno. Como han documentado diversos estudios, el sistema ISAPRE panaliza la maternidad, la edad fértil y la instabilidad laboral, lo que termina excluyendo a muchas mujeres de los planes de salud privados, incluso cuando tienen ingresos similares a los hombres (Instituto Igualdad, 2018; Defensoría de la Salud, 2022; Superintendencia de Salud, 2023). Esta exclusión se reproduce territorialmente, configurando patrones de segmentación espacial que este trabajo busca evidenciar.
+
+### 2.2.1. Gráficos de dispersión
+
+Antes de aplicar el modelo de clsutering, se exploraron las relaciones entre las variables mediante gráficos de dispersión 2D. Esto permitió visualizar tendencias estructurales que justifican la agrupación posterior.
+
+#### 2.2.1.1. Ingreso vs % Mujeres en FONASA
+
+```{r ingreso vs fonasa, echo=FALSE, message=FALSE, warning=FALSE}
+# Mujeres FONASA vs Ingreso
+ggplot(df_clusters, aes(x = mujeres_fonasa, y = mediana_ingreso, color = cluster)) +
+  geom_point(size = 2) +
+  labs(
+    title = "Ingreso vs Mujeres afiliadas a FONASA",
+    x = "% Mujeres FONASA",
+    y = "Mediana ingreso per cápita"
+  ) +
+  theme_minimal()
+```
+
+Se observa una relación inversa clara; a mayor proporción de mujeres en FONASA, menor es su ingreso. El patrón más fuerte se da en el Cluster 3, correspondiente a zonas de alta precariedad. Esto confirma lo señalado por la Defensoría de la Salud (2022), que identifica en FONASA una concentración de mujeres con menor estabilidad laboral y sin acceso a planes de ISAPRE, debido a los "criterios de riesgo y costo" aplicados por las aseguradores privadas.
+
+#### 2.2.1.2. Ingreso vs % Mujeres afiliadas a ISAPRE
+
+```{r mujeres ISAPRE vs Ingreso , echo=FALSE, message=FALSE, warning=FALSE}
+# Mujeres ISAPRE vs Ingreso
+ggplot(df_clusters, aes(x = mujeres_isapre, y = mediana_ingreso, color = cluster)) +
+  geom_point(size = 2) +
+  labs(
+    title = "Ingreso vs Mujeres afiliadas a ISAPRE",
+    x = "% Mujeres ISAPRE",
+    y = "Mediana ingreso per cápita"
+  ) +
+  theme_minimal()
+```
+
+En este gráfico se confirma una correlación prositiva: las mujeres con mayor ingreso están sobrerrepresentadas en ISAPRE. El acceso al sistema privado aparece, por tanto, como un privilegio estructural, y no como una elección libre, como señala criticamente Carrasco (2021) y el Instituto Igualdad (2018).
+
+#### 2.2.1.3. % Mujeres afiadas a ISAPRE vs Escolaridad
+
+```{r isapre vs escolaridad, echo=FALSE, message=FALSE, warning=FALSE}
+# Mujeres ISAPRE vs Escolaridad
+ggplot(df_clusters, aes(x = mujeres_isapre, y = esc_muj_mayor_12, color = cluster)) +
+  geom_point(size = 2) +
+  labs(
+    title = "Escolaridad vs Mujeres afiliadas a ISAPRE",
+    x = "% Mujeres ISAPRE",
+    y = "% Escolaridad ≥ 12 años"
+  ) +
+  theme_minimal()
+```
+
+Aquí se muestra que la afiliación a ISAPRE también esta positivamente asociada al nivel educativo de la mujeres. El Cluster 1 se agrupa hacia los extremos superiores de ambas variables, reflejando que mayor nivel educativo facilita el acceso al sistema previsional privado. Esto se alinea con lo indicado por la Superintendencia de Salud (2023): las ISAPREs han segmentado por edad, género y educación, limitando el acceso de mujeres sin trayectoria laboral formal o sin un nivel educativo alto.
+
+Estos gráficos refuerzan la idea de que la segmentación previsional femenina no es aleatoria, sino que estructurada por ingreso y educación. Las mujeres con menores recursos y escolaridad no solo tiene menor acceso a ISAPRE, sino que se concentran geográficamente en las mismas zonas, configurando patrones de exclusión territorial por género.
+
+### 2.2.2. Matriz de correlación
+
+Para observar la estructura conjunta de las variables, se utilizó `ggpairs()` . La matriz refuerza los patrones observados en los gráficos anteriores y permite identificar asociaciones lineales entre variables clave.
+
+```{r matriz de correlación, echo=FALSE, message=FALSE, warning=FALSE}
+df_plot <- df_clusters[, c(
+  "mujeres_fonasa",
+  "mujeres_isapre",
+  "mediana_ingreso",
+  "esc_muj_mayor_12",
+  "cluster"
+)]
+
+ggpairs(
+  df_plot,
+  columns = 1:4,
+  mapping = aes(color = cluster),
+  upper = list(continuous = "points"),
+  lower = list(continuous = "points"),
+  diag = list(continuous = "densityDiag")
+)
+```
+
+En ella se confirma la coreelación negativa entre FONASA e ingreso, la positiva entre ISAPRE e ingreso, y la fuerte asociación entre escolaridad femenina e ingreso. Estas relaciones sugieren que el clustering posterior no será arbitratio, sino que respaldado por una estructura multivariables consistente.
+
+### 2.2.3. Mapa de Clusters
+
+El modelo K-means con K = 3 se plicó sobre las variables estandarizadas, El resultado se visualiza en el siguiente mapa:
+
+```{r mapa clusters, echo=FALSE, message=FALSE, warning=FALSE}
+sql_comunas <- "
+SELECT cut, nom_comuna, geom
+FROM dpa.comunas_rm_shp
+WHERE nom_provin = 'SANTIAGO';
+"
+sf_comunas <- st_read(con, query = sql_comunas)
+bbox <- st_bbox(sf_mapa)
+
+ggplot() +
+  geom_sf(data = sf_mapa, aes(fill = cluster), color = NA) +
+  geom_sf(data = sf_comunas, fill = NA, color = "black", size = 0.4) +
+  geom_sf_text(data = st_centroid(sf_comunas), aes(label = nom_comuna), size = 2) +
+  scale_fill_brewer(palette = "Set2", name = "Cluster") +
+  labs(title = "Clusters por afiliación femenina, ingreso y escolaridad",
+       subtitle = "Zonas Censales Urbanas – Gran Santiago", 
+       x = NULL, y = NULL) +
+  coord_sf(xlim = c(bbox["xmin"], bbox["xmax"]), ylim = c(bbox["ymin"], bbox["ymax"]), expand = FALSE) +
+  theme_minimal()
+```
+
+El mapa revela una clara segmentación territorial:
+
+-   El Cluster 1 (color verde) es predominante en el sector oriente, este se caracteriza por un alto ingreso, alta escolaridad y alta proporción de mujeres en ISAPRE .
+
+-   En cambio, el Cluster 3 (azul), agrupa zonas del sur y poniente del Gran Santiago, que se señala como un sector con bajo ingreso, alta presencia de mujeres en FONASA y menor escolaridad femenina.
+
+-   Y en el Cluster 2 (naranjo) se presentan condiciones intermedias o mixtas, y aparece principalmente en zonas de transición urbana.
+
+Esto confirma que el sistema previsional en Chile reproduce desicualdades espaciales, donde las mujeres con más recursos se concentran geográficamente en zonas favorecidas, y las que no los tienen se ven confinadas territorialmente a opciones públicas de menor cobertura.
+
+### 2.2.4. Promedios por cluster
+
+Se calcularon los promedios por grupo para caracterizar cuantitativamente los clusters:
+
+```{r promedios, message=FALSE, warning=FALSE, include=FALSE, paged.print=TRUE}
+df_clusters %>%
+  group_by(cluster) %>%
+  summarise(
+    ingreso = mean(mediana_ingreso, na.rm = TRUE),
+    fonasa  = mean(mujeres_fonasa, na.rm = TRUE),
+    isapre  = mean(mujeres_isapre, na.rm = TRUE),
+    escolaridad = mean(esc_muj_mayor_12, na.rm = TRUE)
+  )
+```
+
+```{r tabla promedios, echo=FALSE, message=FALSE, warning=FALSE}
+tabla_promedios <- df_clusters %>%
+  group_by(cluster) %>%
+  summarise(
+    `Ingreso (mediana)`         = round(mean(mediana_ingreso, na.rm = TRUE), 0),
+    `% Mujeres FONASA`          = round(mean(mujeres_fonasa, na.rm = TRUE), 1),
+    `% Mujeres ISAPRE`          = round(mean(mujeres_isapre, na.rm = TRUE), 1),
+    `% Escolaridad femenina ≥12` = round(mean(esc_muj_mayor_12, na.rm = TRUE), 1)
+  )
+
+# Mostrar tabla con kable
+kable(tabla_promedios, caption = "Promedio de variables por cluster", align = "c")
+```
+
+Esto permite construir perfiles:
+
+-   Clustes 1: Mujeres con mayor escolaridad e ingreso, alta ISAPRE
+
+-   Cluster 3: Mujeres con baja escolaridad, bajo ingreso y alta FONASA.
+
+-   Cluster 2: condicion intermedia, mezcla realidades.
+
+### 2.2.5. Índice de Shannon
+
+Además del análisis de clusters a nivel de zona censal, se incorporó el cálculo del índice de Shannon como herramienta para medir la variabilidad intra-comunal. Esta métrica permite identificar en qué comunas conviven multiples realidades estructurales en términos de ingreso, afiliación previsional y escolaridad femenina, y en cuáles predomina un perfil único.
+
+Este indicador es especialmente útil en análisis de políticas públicas, ya que muestra la desigualdad al interior de una misma comuna, superando las limitaciones del análisis por promedio comunal.
+
+El índice se calculó con el paquete `vegan`, sobre una tabla de frecuencias creada a partir del resulatdos del clustering:
+
+```{r shannon, echo=TRUE, message=FALSE, warning=FALSE}
+# Crear tabla de frecuencia
+tabla_shannon <- df_clusters %>%
+  group_by(nom_comuna, cluster) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = cluster,
+    values_from = n,
+    values_fill = 0
+  )
+
+# Calcular índice de Shannon
+tabla_shannon$shannon <- diversity(tabla_shannon[ , -1], index = "shannon")
+```
+
+A continuación se muestra el mapa del índice de Shannon:
+
+```{r mapa shannon, echo=FALSE, message=FALSE, warning=FALSE}
+# Unión con geometría comunal 
+sf_shannon <- sf_comunas %>%
+  left_join(tabla_shannon, by = "nom_comuna")
+
+# Mapa 
+ggplot(sf_shannon) +
+  geom_sf(aes(fill = shannon), color = "grey20", size = 0.3) +
+  geom_sf_text(aes(label = nom_comuna), size = 1.5, color = "black") +
+  scale_fill_viridis_c(option = "plasma", name = "Índice de Shannon") +
+  labs(
+    title = "Variabilidad intra-comunal de clusters",
+    subtitle = "Índice de Shannon por comuna (zonas urbanas del Gran Santiago)", 
+    x = NULL, y = NULL
+  ) +
+  coord_sf(
+    xlim = c(bbox["xmin"], bbox["xmax"]),
+    ylim = c(bbox["ymin"], bbox["ymax"]),
+    expand = FALSE
+  ) +
+  theme_minimal()
+```
+
+El mapa generado muestra una variabilidad territorial significativa, lo que evidencia que no todas las comunas del Gran Santiago presentan el mismo nivel de diversidad interna en términos de ingreso, escolaridad y afiliación previsional femenina. A continuación, se describe la situación de cada grupo de comunas según su nivel de diversidad estructural:
+
+-   Comunas con máxima diversidad:\
+    Lo Barnechea aparece en color amarillo intenso, lo que indica un ínidce de Shannon alto, cercano a 1. Esto significa que en esa comuna conviven más de un tipo de cluster con proporciones relativamente equilibradas. Es decir, hay alta diversidad interna en términos de ingreso, previsión y escolaridad femenina. Este patrón podría reflejar la coexistencia de sectores muy acomodados con otros más vulnerables, como barrios periféricos o áreas con menor acceso a servicios. Este fenómeno suele observarse en comunas con un desarrollo urbano mixto, que combinan zonas exclusivas con sectores de origen popular.
+
+-   Comunas con diversidad moderada:\
+    Comunas como Huechuraba, Recoleta, Macul, Ñuñoa, La Reina, San Joaquín, Peñalolén, entre otros, aparecen en tonos anaranjados y rosados, lo que indica que presentan más de un cluster, aunque con una distribución menos equilibrada. En estos casos, es probable que exista un cluster predominante, pero también estén presentes zonas minoritarias con condiciones socioeconómicas y previsionales distintas. Estas comunas reflejan una estructura urbana segmentada, donde conviven realidades contrastantes en términos de acceso y exclusión previsional.
+
+-   Comunas con baja diversidad interna, pero con alta previsión y privilegio:\
+    Estas comunas muestran índices bajos de Shannon porque son internamente homogéneas, dominadas por zonas de alto ingreso, alta escolaridad femenina y fuerte afiliación a ISAPRE. Son territorios estructuralmente privilegiados, donde la mayoría de las mujeres reside en condiciones que facilitan su acceso al sistema previsional privado:
+
+    -   Vitacura
+
+    -   Las Condes
+
+    -   Providencia
+
+    Estas comunas concentran a mujeres con mayor capital educativo y capacidad económica, lo que confirma lo señalado por la Superintendencia de Salud (2023) respecto al sesgo estructural del sistema ISAPRE hacia mujeres con mejores condiciones de vida, dejando fuera a quienes no se ajustan al perfil de “bajo riesgo” exigido por el mercado asegurador.
+
+-   Comunas homogéneas de baja previsión y vulnerabilidad estructural:\
+    También con índices bajos de Shannon, estas comunas son internamente homogéneas, pero dominadas por zonas con alta proporción de mujeres afiliadas a FONASA, bajo ingreso per cápita y menor nivel de escolaridad femenina. Representan espacios de exclusión estructural, donde las mujeres enfrentan múltiples barreras de acceso a derechos sociales básicos como salud, previsión y educación:
+
+    -   Pedro Aguirre Cerda
+
+    -   San Miguel
+
+    -   San Ramón
+
+    -   La Granja
+
+    -   Cerro Navia
+
+    Estos resultados coinciden con los diagnósticos del Instituto Igualdad (2018) y la Defensoría de la Salud (2022), que han denunciado que el sistema ISAPRE, al aplicar criterios de rentabilidad y riesgo, excluye sistemáticamente a mujeres de sectores populares, perpetuando la desigualdad en el acceso a salud desde una lógica de mercado.
+
+------------------------------------------------------------------------
+
+# 3. Conclusión
+
+Este trabajo logró cumplir satisfactoriamente el objetivo general de analizar territorialmente la segmentación previsional femenina en el Gran Santiago, a partir de variables clave como afiliación a FONASA e ISAPRE, ingreso per cápita y escolaridad femenina. Asimismo, se cumplieron los objetivos específicos, que contemplaban la aplicación de un modelo de clustering multivariable, la visualización espacial de los resultados y la incorporación del índice de Shannon para medir la diversidad intra-comunal.
+
+Metodológicamente, se utilizó una combinación de herramientas estadísticas y geoespaciales las cuales son R y PostgreSQL, para poder trabajar con datos del CENSO 2017 y la Encuesta CASEN 2022, incluyendo variables simuladas previamente en el Trabajo 2. Esto permitió mantener una continuidad analítica y profundizar la comprensión del fenómeno desde una mirada multiescalar y con enfoque de género.
+
+El análisis reveló tres perfiles territoriales bien diferenciados:
+
+-   Un cluster con alto ingreso, alta escolaridad femenina y fuerte presencia en ISAPRE, concentrado en el sector oriente.
+
+-   Un segundo grupo con características intermedias, propio de comunas de transición urbana.
+
+-   Y un tercer cluster con bajo ingreso, alta dependencia de FONASA y menor escolaridad femenina, predominante en el sur y poniente del Gran Santiago.
+
+Estas configuraciones no solo evidencian la existencia de segmentación estructural en el acceso previsional, sino también su expresión territorial concreta, lo que confirma las advertencias planteadas por organismos como el Instituto Igualdad (2018) y la Defensoría de la Salud (2022) sobre la exclusión sistemática que enfrentan las mujeres en el sistema ISAPRE, especialmente aquellas que no cumplen con los criterios de “rentabilidad” definidos por el mercado asegurador.
+
+El uso del índice de Shannon aportó una dimensión adicional al análisis, al permitir identificar comunas con alta heterogeneidad interna, así como otras con perfiles homogéneos de vulnerabilidad o privilegio. Esta herramienta permitió visibilizar que la desigualdad no se distribuye solo entre comunas, sino también dentro de ellas, lo que refuerza la necesidad de aplicar políticas diferenciadas a escala subcomunal.
+
+Desde una perspectiva de género, este trabajo evidencia que las mujeres no solo enfrentan barreras individuales en el acceso a salud, sino que estas se expresan territorialmente, de forma estratificada y estructural. Así, el territorio actúa como un dispositivo de reproducción de la desigualdad previsional, donde el lugar de residencia incide directamente en el tipo y calidad de cobertura a la que pueden acceder las mujeres.
+
+En síntesis, se reafirma que la segmentación previsional en Chile no es una cuestión meramente técnica o financiera, sino que está profundamente relacionada con las desigualdades históricas de género, clase y territorio. Reconocer estas intersecciones es clave para avanzar hacia un sistema de salud más justo, equitativo y universal, donde el acceso no dependa del ingreso, la edad fértil o el barrio en el que se habita.
+
+------------------------------------------------------------------------
+
+# 4. Bibliografía
+
+-   Carrasco, P. (2021). *Discriminación estructural de género en el sistema de salud privado en Chile: El caso de las ISAPRE*. Tesis de Magíster, Universidad de Chile.\
+    <https://repositorio.uchile.cl/handle/2250/184929>
+
+-   Defensoría de la Salud. (2022, junio 30). *Discriminación de género en las ISAPREs: no las permitamos más*.\
+    <https://defensoriasalud.cl/2022/06/30/discriminacion-de-genero-en-las-isapres-no-las-permitamos-mas/>
+
+-   Instituto Igualdad. (2018, mayo 28). *Discriminación a las mujeres en el sistema ISAPRE requiere reforma del sistema de salud*.\
+    <https://institutoigualdad.cl/2018/05/28/discriminacion-a-las-mujeres-en-el-sistema-isapre-requiere-reforma-del-sistema-de-salud/>
+
+-   Superintendencia de Salud. (2023). *Análisis del sistema ISAPRE con perspectiva de género: Año 2023*.\
+    <https://www.superdesalud.gob.cl/app/uploads/2024/11/analisis-de-isapre-con-perspectiva-de-genero-ano-2023.pdf>
+
+-   Clínicas de Chile. (2023). *En últimos diez años, solo las coberturas de mujeres en ISAPREs han empeorado y llegan a pagar 62% más que hombres por un plan*.\
+    <https://www.clinicasdechile.cl/noticias/en-ultimos-diez-anos-solo-las-coberturas-de-mujeres-en-isapres-han-empeorado-y-llegan-a-pagar-62-mas-que-hombres-por-un-plan/>
+
+-   Ministerio de Desarrollo Social y Familia. (2022). *Encuesta de Caracterización Socioeconómica Nacional – CASEN 2022*.\
+    <https://observatorio.ministeriodesarrollosocial.gob.cl/encuesta-casen>
+
+-   Instituto Nacional de Estadísticas (INE). (2018). *Censo 2017: Resultados definitivos*.\
+    <https://www.censo2017.cl>
+
+-   Xie, Y. (2015). *Dynamic Documents with R and knitr* (2nd ed.). Chapman and Hall/CRC.\
+    https://yihui.org/knitr/
+
+-   Oksanen, J., Blanchet, F. G., Kindt, R., Legendre, P., Minchin, P. R., O'Hara, R. B., ... & Wagner, H. (2022). *vegan: Community Ecology Package* (R package version 2.6-4).\
+    <https://CRAN.R-project.org/package=vegan>
+
+-   Hijmans, R. J. (2023). *sf: Simple Features for R* (R package version 1.0-14).\
+    <https://r-spatial.github.io/sf/>
+
+    Boehmke, B., & Greenwell, B. (2020). *Hands-On Machine Learning with R*. CRC Press. (referencia general sobre clustering y k-means)
