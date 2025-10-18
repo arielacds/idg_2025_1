@@ -106,7 +106,7 @@ También se calcularon los porcentajes de viviendas con hacinamiento moderado o 
 La consulta SQL generó una tabla con los siguientes campos por zona censal:
 
 | Variable | Descripción |
-|------------------------------------|------------------------------------|
+|----|----|
 | `geocodigo` | código único de identificación de la zona censal (clave espacial). |
 | `nom_comuna` | nombre de la comuna en la que se encuentra la zona. |
 | `razon_educativa` | índice porcentual entre mujeres con educación básica (p15 ≤ 7) y mujeres con educación superior (p15 \> 7). Valores mayores a 1 indican predominio de mujeres con menor nivel educativo. |
@@ -185,7 +185,7 @@ $$Donde:
 -   *I*: Razón de mujeres en edad fértil con educación básica alcanzada sobre mujeres en edad fértil de educación superior alcanzada.
 
     | Naturaleza del índice *I* | Descripción |
-    |------------------------------------|------------------------------------|
+    |----|----|
     | *I* \< 1 | Predominan mujeres en edad fértil con educación superior alcanzada. |
     | *I* = 1 | Igual cantidad de mujeres con educación básica y superior. |
     | *I* \> 1 | Predominan mujeres en edad fértil con educación básica alcanzada. |
