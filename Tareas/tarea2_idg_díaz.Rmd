@@ -1,0 +1,252 @@
+---
+title: "Análisis del Gasto en Servicios Dentales"
+output: html_document
+---
+
+# Introducción
+
+Este análisis se centra en el gasto en **servicios dentales curativos o de rehabilitación** (CCIF `06.2.2.09.01`), que incluyen consultas, procedimientos y tratamientos dentales no hospitalarios realizados por profesionales como dentistas, endodoncistas, ortodoncistas, cirujanos maxilofaciales, entre otros.
+
+El servicio contempla tanto tratamientos clínicos como urgencias, empastes, endodoncias, implantes, prótesis y ortodoncia, así como sus insumos asociados. Se excluyen los servicios preventivos y productos médicos cobrados por separado.
+
+Se seleccionó este servicio por su relevancia social y por las claras desigualdades en el acceso, fuertemente determinadas por el ingreso y la escolaridad. Además, presenta una distribución adecuada para un modelo de dos partes, con muchos hogares sin gasto y montos altos entre quienes sí acceden.
+
+# Código
+
+## 1. Librerías necesarias
+
+Para desarrollar correctamente el trabajo, se cargaron las principales librerías necesarias:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# --- LIBRERÍAS ---
+library(haven)
+library(ggplot2)
+library(pROC)
+library(corrplot)
+```
+
+## 2. Carga y preparación de las bases
+
+Se cargaron las bases de datos `personas` y `gastos` de la EPF. Luego, se filtraron las observaciones correspondientes a la macrozona 2 (Gran Santiago) y se consideraron únicamente las personas principales del hogar, ya que los servicios de salud suelen registrarse bajo su responsabilidad económica.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# --- CARGA DE BASES ---
+personas <- read_dta("../data/datos_epf/base-personas-ix-epf-stata.dta")
+gastos   <- read_dta("../data/datos_epf/base-gastos-ix-epf-stata.dta")
+
+# --- FILTRO: GRAN SANTIAGO Y PERSONAS PRINCIPALES (servicio) ---
+personas_gs <- subset(personas, macrozona == 2 & sprincipal == 1)
+```
+
+## 3. Limpieza básica y creación de variables
+
+Se eliminaron observaciones con valores inválidos en edad, escolaridad e ingreso. A partir del ingreso disponible del hogar y el tamaño del hogar, se construyó la variable `ing_pc` (ingreso per cápita). Además, se categorizó la escolaridad en cuatro niveles (`grupo_escolaridad`) para facilitar la interpretación en los modelos.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# --- LIMPIEZA BÁSICA ---
+valores_invalidos <- c(-99, -88, -77)
+personas_gs <- subset(personas_gs,
+                      !(edad %in% valores_invalidos) &
+                        !(edue %in% valores_invalidos) &
+                        ing_disp_hog_hd_ai >= 0)
+
+# --- VARIABLES DERIVADAS ---
+personas_gs$ing_pc <- personas_gs$ing_disp_hog_hd_ai / personas_gs$npersonas
+personas_gs$grupo_escolaridad <- cut(personas_gs$edue,
+                                     breaks = c(-Inf, 8, 12, 16, Inf),
+                                     labels = c("Básica o menos", "Media-baja", "Media-alta", "Alta"),
+                                     right = TRUE)
+```
+
+## 4. Obtención del gasto del servicio dental
+
+Se filtraron los registros de la base `gastos` asociados al código **CCIF `06.2.2.09.01`** (servicios dentales curativos o de rehabilitación). Luego, se **sumó el gasto total por hogar (`folio`)**, y se unió esa información a la base de personas mediante un `merge`. Se creó una nueva variable `gasto_dental` (monto total gastado) y una variable binaria `incurre_gasto` que indica si el hogar incurrió o no en gasto dental.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# --- GASTO DENTAL: unir por folio asegurando tipo compatible ---
+codigo_dental <- "06.2.2.09.01"
+gastos_dental <- subset(gastos, ccif == codigo_dental & macrozona == 2)
+
+# Asegurar tipo character en ambas tablas
+personas_gs$folio <- as.character(personas_gs$folio)
+gastos_dental$folio <- as.character(gastos_dental$folio)
+
+# Gasto total por hogar
+gasto_por_folio <- aggregate(gasto ~ folio, data = gastos_dental, sum)
+names(gasto_por_folio)[2] <- "gasto_dental"
+
+# Unión por folio
+gasto_por_folio$folio <- as.character(gasto_por_folio$folio)
+personas_gs <- merge(personas_gs, gasto_por_folio, by = "folio", all.x = TRUE)
+
+# Reemplazar NA por 0
+personas_gs$gasto_dental[is.na(personas_gs$gasto_dental)] <- 0
+personas_gs$incurre_gasto <- ifelse(personas_gs$gasto_dental > 0, 1, 0)
+```
+
+## 5. Construcción de la base de análisis (`df_dental`)
+
+Se creó una base intermedia que incluye solo observaciones con todas las variables explicativas válidas. Además, se transformó la variable `sexo` en un factor sin cambiar su nivel base (por defecto: `1 = hombre`), lo que permite interpretar los modelos comparando mujeres respecto a hombres.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# --- BASE PRINCIPAL ---
+df_dental <- subset(personas_gs,
+                    !is.na(edad) & !is.na(grupo_escolaridad) &
+                      !is.na(sexo) & !is.na(npersonas) & !is.na(ing_pc))
+df_dental$sexo <- factor(df_dental$sexo)
+```
+
+## 6. Exploración inicial
+
+Antes de aplicar los modelos, se realizó una exploración descriptiva del gasto dental privado utilizando la base `df_dental`, que contiene tanto a quienes gastaron como a quienes no. Se elaboraron histogramas para visualizar la distribución del gasto, boxplots para comparar montos según sexo, y gráficos de dispersión para observar posibles relaciones entre el gasto y variables como edad e ingreso per cápita.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+hist(df_dental$gasto_dental, breaks = 30, col = "lightblue", main = "Gasto dental (sin limpieza)", xlab = "Gasto")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+boxplot(gasto_dental ~ factor(sexo), data = df_dental, main = "Gasto por sexo", col = c("tomato", "lightgreen"))
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(df_dental$edad, df_dental$gasto_dental, main = "Edad vs Gasto dental", xlab = "Edad", ylab = "Gasto", pch = 20, col = rgb(0,0,0,0.3))
+lines(lowess(df_dental$edad, df_dental$gasto_dental), col = "blue", lwd = 2)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(df_dental$ing_pc, df_dental$gasto_dental, main = "Ingreso vs Gasto dental", xlab = "Ingreso per cápita", ylab = "Gasto", pch = 20, col = rgb(0,0,1,0.3))
+lines(lowess(df_dental$ing_pc, df_dental$gasto_dental), col = "red", lwd = 2)
+```
+
+## 7. Limpieza de valores atípicos
+
+Debido a la alta dispersión del gasto entre quienes sí incurrieron en gasto dental, se aplicó una limpieza de valores atípicos (**outliers**) con el fin de mejorar la precisión del modelo lineal.
+
+Se filtran solo los hogares que efectivamente incurrieron en gasto, para preparar el modelo lineal.
+
+Se utilizó el método del **rango intercuartílico (IQR).**
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+# --- LIMPIEZA DE OUTLIERS SOLO EN QUIENES SÍ GASTARON ---
+df_dental_gastaron <- df_dental[df_dental$gasto_dental > 0, ]
+
+limpiar_outliers <- function(x) {
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lim_inf <- Q1 - 1.5 * IQR
+  lim_sup <- Q3 + 1.5 * IQR
+  return(x >= lim_inf & x <= lim_sup)
+}
+
+filtros <- with(df_dental_gastaron,
+                limpiar_outliers(edad) &
+                  limpiar_outliers(edue) &
+                  limpiar_outliers(ing_pc) &
+                  limpiar_outliers(gasto_dental) &
+                  limpiar_outliers(npersonas))
+
+df_dental_limpio <- df_dental_gastaron[filtros, ]
+```
+
+## 8. Exploración limpia
+
+Eliminación de valores atípicos
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+hist(df_dental_limpio$gasto_dental, breaks = 30, col = "lightgreen", main = "Gasto dental (limpio)", xlab = "Gasto")
+```
+
+```{r}
+boxplot(gasto_dental ~ factor(sexo), data = df_dental_limpio, main = "Gasto dental por sexo (limpio)", col = c("gold", "skyblue"))
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(df_dental_limpio$edad, df_dental_limpio$gasto_dental, main = "Edad vs Gasto (limpio)", xlab = "Edad", ylab = "Gasto", pch = 20, col = rgb(0.3,0.1,0,0.3))
+lines(lowess(df_dental_limpio$edad, df_dental_limpio$gasto_dental), col = "darkgreen", lwd = 2)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(df_dental_limpio$ing_pc, df_dental_limpio$gasto_dental, main = "Ingreso vs Gasto (limpio)", xlab = "Ingreso per cápita", ylab = "Gasto", pch = 20, col = rgb(0.2,0.2,0.5,0.3))
+lines(lowess(df_dental_limpio$ing_pc, df_dental_limpio$gasto_dental), col = "orange", lwd = 2)
+```
+
+## 9. Matriz de correlación
+
+Se construyó una matriz de correlación de Pearson entre las variables explicativas y el gasto dental, utilizando únicamente las observaciones limpias. Esto permite identificar **relaciones lineales** entre variables y verificar redundancias o asociaciones esperadas (por ejemplo, entre ingreso y gasto).
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# --- MATRIZ DE CORRELACIÓN ---
+df_cor <- data.frame(
+  gasto = df_dental_limpio$gasto_dental,
+  edad = df_dental_limpio$edad,
+  escolaridad = df_dental_limpio$edue,
+  ingreso = df_dental_limpio$ing_pc,
+  personas = df_dental_limpio$npersonas
+)
+cor_matrix <- cor(df_cor, use = "complete.obs", method = "pearson")
+corrplot(cor_matrix, method = "color", tl.cex = 0.8, number.cex = 0.7)
+```
+
+## 10. Modelo Lineal
+
+Se modeló el gasto en función de la escolaridad, ingreso per cápita, sexo, edad y tamaño del hogar. El modelo permite analizar qué factores explican mayores niveles de gasto, aunque, como es común en este tipo de datos, el R² obtenido fue bajo debido a la alta variabilidad individual.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# --- MODELO LINEAL: monto gastado, solo con datos limpios ---
+modelo_lineal <- lm(gasto_dental ~ edue + ing_pc + sexo + edad + npersonas,
+                    data = df_dental_limpio)
+summary(modelo_lineal)
+```
+
+El modelo permite concluir que el ingreso per cápita y la edad son determinantes significativos del monto gastado en servicios dentales privados. Sin embargo, otros factores como sexo, escolaridad o tamaño del hogar no resultaron significativos, lo que sugiere que el monto gastado depende más de factores económicos y necesidades individuales que de características sociodemográficas amplias.
+
+## 11. Modelo logit
+
+El objetivo fue analizar qué factores están asociados a tener o no gasto en atención dental privada. Las variables explicativas fueron: sexo, edad, escolaridad agrupada, ingreso per cápita y número de personas en el hogar.
+
+```{r message=FALSE, warning=FALSE}
+# --- MODELO LOGIT: probabilidad de incurrir en gasto dental ---
+modelo_logit <- glm(incurre_gasto ~ factor(sexo) + edad + grupo_escolaridad + ing_pc + npersonas,
+                    data = df_dental, family = binomial)
+summary(modelo_logit)
+```
+
+El modelo logit evidencia que la escolaridad y el ingreso son los principales determinantes estructurales del acceso al servicio dental privado, reforzando la idea de que se trata de un bien de consumo desigual y condicionado por la posición socioeconómica.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# AUC
+probabilidades_logit <- predict(modelo_logit, type = "response")
+roc_obj <- roc(df_dental$incurre_gasto, probabilidades_logit)
+cat("AUC:", auc(roc_obj), "\n")
+```
+
+Un AUC de 0.644 indica que el modelo tiene una capacidad aceptable para clasificar correctamente, aunque con margen de mejora.
+
+```{r}
+# curva ROC
+plot(roc_obj, col = "blue", main = "Curva ROC - Modelo Logit")
+abline(a = 0, b = 1, lty = 2, col = "gray")
+```
+
+la curva no se acerca al vértice superior izquierdo (sensibilidad = 1, especificidad = 1), lo que refleja que el modelo **no es altamente preciso**, pero sí razonable dentro de un contexto social y con las variables disponibles.
+
+El área bajo la curva ROC (AUC) fue de **0.644**, lo que refuerza esta interpretación: el modelo tiene una **capacidad aceptable para distinguir entre hogares que incurren y no incurren en gasto**, aunque con margen de mejora.
+
+```{r}
+# Pseudo-R² de McFadden
+logLik_modelo <- logLik(modelo_logit)
+logLik_nulo <- logLik(glm(incurre_gasto ~ 1, data = df_dental, family = binomial))
+pseudo_R2 <- 1 - as.numeric(logLik_modelo / logLik_nulo)
+cat("Pseudo-R² de McFadden:", round(pseudo_R2, 4), "\n")
+
+```
+
+ajuste modesto.
+
+| mejora                       | razón                           |
+|------------------------------|---------------------------------|
+| Agregar más variables        | Majora el poder explicativo     |
+| Probar log(gasto)            | Reduce el sesgo en le regresión |
+| Visualizaciones comparativas | Ayudan con el análisis          |
