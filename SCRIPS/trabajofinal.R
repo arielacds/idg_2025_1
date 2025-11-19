@@ -1,10 +1,11 @@
-#library(haven)
+# =============================================================================
+library(haven)
 
 # Leer archivos Stata
-personas <- read_dta("data/data_epf/base-personas-ix-epf-stata.dta")
-gastos   <- read_dta("data/data_epf/base-gastos-ix-epf-stata.dta")
-cantidades <- read_dta("data/data_epf/base-cantidades-ix-epf-stata.dta")
-ccif     <- read_dta("data/data_epf/ccif-ix-epf-stata.dta")
+personas <- read_dta("data/datos_epf/base-cantidades-ix-epf-stata.dta")
+gastos   <- read_dta("data/datos_epf/base-gastos-ix-epf-stata.dta")
+cantidades <- read_dta("data/datos_epf/base-cantidades-ix-epf-stata.dta")
+ccif     <- read_dta("data/datos_epf/ccif-ix-epf-stata.dta")
 
 # Se filtran registros de personas para el Gran Santiago
 personas_gs = personas[personas$macrozona == 2 &
@@ -28,7 +29,7 @@ cantidades_servicio = cantidades[
      cantidades$sc == "02" &
      cantidades$p == "04"),
 ]
-
+# ===============================================
 # --- CARGA DE LIBRERÍAS ---
 library(haven)
 library(ggplot2)
@@ -50,7 +51,7 @@ personas_gs = subset(personas_gs, !(edad %in% valores_invalidos) &
 personas_gs$ing_pc = personas_gs$ing_disp_hog_hd_ai / personas_gs$npersonas
 
 # --- FILTRAR GASTOS DE MI VARIABLE (veterinario) ---
-gastos_servicio = subset(gastos, ccif == "13.3.1.02." & macrozona == 2)
+gastos_servicio = subset(gastos, ccif == "09.4.5.01.00" & macrozona == 2)
 gasto_hogar_servicio = merge(gastos_servicio, personas_gs, by = "folio")
 tabla_gastos = gasto_hogar_servicio[, c("sexo", "edad", "edue", "fe.x", "cse", "ing_pc", "gasto")]
 
